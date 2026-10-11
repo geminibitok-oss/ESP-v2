@@ -1,0 +1,6 @@
+{
+  "name": "ESP Лестница v2",
+  "description": "Прошивка и веб-интерфейс управления умной подсветкой лестницы на ESP32.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,1738 @@
+export interface FirmwareFile {
+  name: string;
+  path: string;
+  category: 'core' | 'driver' | 'web' | 'config';
+  description: string;
+  code: string;
+}
+
+export const FIRMWARE_FILES: FirmwareFile[] = [
+  {
+    name: 'main.c',
+    path: 'main/main.c',
+    category: 'core',
+    description: 'Главная точка входа. Инициализирует NVS, настройки, LED, датчики, Wi-Fi и запускает FreeRTOS задачи.',
+    code: `#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+
+#include "settings.h"
+#include "staircase_led.h"
+#include "sensors.h"
+#include "staircase.h"
+#include "wifi_manager.h"
+#include "web_server.h"
+
+static const char *TAG = "STAIR_MAIN";
+
+void app_main(void)
+{
+    // Отключаем спам внутренних предупреждений Wi-Fi драйвера
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
+    esp_log_level_set("wifi_init", ESP_LOG_ERROR);
+
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "   ESP32 Smart Staircase Controller    ");
+    ESP_LOGI(TAG, "              Version 2.0               ");
+    ESP_LOGI(TAG, "========================================");
+
+    // 1. Инициализация NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // 2. Инициализация сетевого стека
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // 3. Загрузка настроек
+    staircase_settings_t settings;
+    settings_init(&settings);
+    settings_load(&settings);
+
+    // 4. Инициализация аппаратных компонентов
+    ESP_ERROR_CHECK(staircase_led_init(&settings));
+    ESP_ERROR_CHECK(sensors_init(&settings));
+
+    // 5. Инициализация и запуск конечного автомата лестницы
+    ESP_ERROR_CHECK(staircase_init(&settings));
+
+    // 6. Запуск Wi-Fi
+    ESP_ERROR_CHECK(wifi_manager_init(&settings));
+
+    // 7. Запуск веб-сервера
+    ESP_ERROR_CHECK(web_server_start(&settings));
+
+    ESP_LOGI(TAG, "Staircase system started successfully! Free heap: %lu bytes", esp_get_free_heap_size());
+}`
+  },
+  {
+    name: 'staircase.h',
+    path: 'main/staircase.h',
+    category: 'core',
+    description: 'Интерфейс конечного автомата (FSM) управления сценариями лестницы.',
+    code: `#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+typedef enum {
+    STAIRCASE_STATE_IDLE = 0,
+    STAIRCASE_STATE_ON_UP,
+    STAIRCASE_STATE_ON_DOWN,
+    STAIRCASE_STATE_HOLD,
+    STAIRCASE_STATE_OFF_UP,
+    STAIRCASE_STATE_OFF_DOWN,
+    STAIRCASE_STATE_MANUAL
+} staircase_state_t;
+
+esp_err_t staircase_init(staircase_settings_t *settings);
+void staircase_apply_settings(const staircase_settings_t *settings);
+staircase_state_t staircase_get_state(void);
+const char *staircase_get_state_str(void);
+uint32_t staircase_get_hold_remaining_ms(void);
+
+void staircase_trigger_bottom(void);
+void staircase_trigger_top(void);
+void staircase_set_manual_on(void);
+void staircase_set_manual_off(void);`
+  },
+  {
+    name: 'staircase.c',
+    path: 'main/staircase.c',
+    category: 'core',
+    description: 'Реализация FSM лестницы (анимация снизу вверх / сверху вниз, удержание, ночной режим).',
+    code: `#include "staircase.h"
+#include "staircase_led.h"
+#include "sensors.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "STAIR_FSM";
+
+static staircase_settings_t cfg;
+static staircase_state_t current_state = STAIRCASE_STATE_IDLE;
+static int64_t hold_start_time = 0;
+static TaskHandle_t fsm_task_handle = NULL;
+
+static const char* state_names[] = {
+    "IDLE",
+    "ON_UP",
+    "ON_DOWN",
+    "HOLD",
+    "OFF_UP",
+    "OFF_DOWN",
+    "MANUAL"
+};
+
+const char *staircase_get_state_str(void)
+{
+    return state_names[current_state];
+}
+
+staircase_state_t staircase_get_state(void)
+{
+    return current_state;
+}
+
+uint32_t staircase_get_hold_remaining_ms(void)
+{
+    if (current_state != STAIRCASE_STATE_HOLD) return 0;
+    int64_t elapsed = (esp_timer_get_time() - hold_start_time) / 1000;
+    if (elapsed >= cfg.hold_time_ms) return 0;
+    return (uint32_t)(cfg.hold_time_ms - elapsed);
+}
+
+void staircase_apply_settings(const staircase_settings_t *settings)
+{
+    cfg = *settings;
+    ESP_LOGI(TAG, "Settings applied to FSM");
+}
+
+void staircase_trigger_bottom(void)
+{
+    if (current_state == STAIRCASE_STATE_IDLE || current_state == STAIRCASE_STATE_OFF_UP || current_state == STAIRCASE_STATE_OFF_DOWN) {
+        current_state = STAIRCASE_STATE_ON_UP;
+        ESP_LOGI(TAG, "Triggered from BOTTOM -> state: ON_UP");
+    } else if (current_state == STAIRCASE_STATE_HOLD) {
+        hold_start_time = esp_timer_get_time();
+        ESP_LOGI(TAG, "Hold time reset by BOTTOM sensor");
+    }
+}
+
+void staircase_trigger_top(void)
+{
+    if (current_state == STAIRCASE_STATE_IDLE || current_state == STAIRCASE_STATE_OFF_UP || current_state == STAIRCASE_STATE_OFF_DOWN) {
+        current_state = STAIRCASE_STATE_ON_DOWN;
+        ESP_LOGI(TAG, "Triggered from TOP -> state: ON_DOWN");
+    } else if (current_state == STAIRCASE_STATE_HOLD) {
+        hold_start_time = esp_timer_get_time();
+        ESP_LOGI(TAG, "Hold time reset by TOP sensor");
+    }
+}
+
+void staircase_set_manual_on(void)
+{
+    current_state = STAIRCASE_STATE_MANUAL;
+    staircase_led_all_on(cfg.brightness, cfg.color_r, cfg.color_g, cfg.color_b);
+    ESP_LOGI(TAG, "Manual ALL ON activated");
+}
+
+void staircase_set_manual_off(void)
+{
+    current_state = STAIRCASE_STATE_IDLE;
+    staircase_led_all_off();
+    ESP_LOGI(TAG, "Manual ALL OFF activated");
+}
+
+static void fsm_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Staircase FSM Task started");
+
+    while (1)
+    {
+        switch (current_state)
+        {
+            case STAIRCASE_STATE_IDLE:
+                if (sensor_bottom_active()) {
+                    staircase_trigger_bottom();
+                } else if (sensor_top_active()) {
+                    staircase_trigger_top();
+                }
+                vTaskDelay(pdMS_TO_TICKS(50));
+                break;
+
+            case STAIRCASE_STATE_ON_UP:
+                for (uint16_t step = 0; step < cfg.steps; step++) {
+                    staircase_led_set_step(step, true, cfg.brightness, cfg.color_r, cfg.color_g, cfg.color_b);
+                    vTaskDelay(pdMS_TO_TICKS(cfg.step_on_time_ms));
+                    if (current_state == STAIRCASE_STATE_MANUAL) break;
+                }
+                if (current_state == STAIRCASE_STATE_ON_UP) {
+                    current_state = STAIRCASE_STATE_HOLD;
+                    hold_start_time = esp_timer_get_time();
+                    ESP_LOGI(TAG, "All steps turned ON (UP) -> entering HOLD");
+                }
+                break;
+
+            case STAIRCASE_STATE_ON_DOWN:
+                for (int step = (int)cfg.steps - 1; step >= 0; step--) {
+                    staircase_led_set_step((uint16_t)step, true, cfg.brightness, cfg.color_r, cfg.color_g, cfg.color_b);
+                    vTaskDelay(pdMS_TO_TICKS(cfg.step_on_time_ms));
+                    if (current_state == STAIRCASE_STATE_MANUAL) break;
+                }
+                if (current_state == STAIRCASE_STATE_ON_DOWN) {
+                    current_state = STAIRCASE_STATE_HOLD;
+                    hold_start_time = esp_timer_get_time();
+                    ESP_LOGI(TAG, "All steps turned ON (DOWN) -> entering HOLD");
+                }
+                break;
+
+            case STAIRCASE_STATE_HOLD:
+                if (sensor_bottom_active() || sensor_top_active()) {
+                    hold_start_time = esp_timer_get_time();
+                }
+                if (staircase_get_hold_remaining_ms() == 0) {
+                    current_state = STAIRCASE_STATE_OFF_UP;
+                    ESP_LOGI(TAG, "HOLD expired -> entering OFF_UP");
+                }
+                vTaskDelay(pdMS_TO_TICKS(50));
+                break;
+
+            case STAIRCASE_STATE_OFF_UP:
+                for (uint16_t step = 0; step < cfg.steps; step++) {
+                    if (sensor_bottom_active() || sensor_top_active()) {
+                        current_state = STAIRCASE_STATE_HOLD;
+                        hold_start_time = esp_timer_get_time();
+                        staircase_led_all_on(cfg.brightness, cfg.color_r, cfg.color_g, cfg.color_b);
+                        break;
+                    }
+                    staircase_led_set_step(step, false, 0, 0, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(cfg.step_off_time_ms));
+                }
+                if (current_state == STAIRCASE_STATE_OFF_UP) {
+                    current_state = STAIRCASE_STATE_IDLE;
+                    staircase_led_all_off();
+                    ESP_LOGI(TAG, "Finished turning OFF -> IDLE");
+                }
+                break;
+
+            case STAIRCASE_STATE_OFF_DOWN:
+                for (int step = (int)cfg.steps - 1; step >= 0; step--) {
+                    if (sensor_bottom_active() || sensor_top_active()) {
+                        current_state = STAIRCASE_STATE_HOLD;
+                        hold_start_time = esp_timer_get_time();
+                        staircase_led_all_on(cfg.brightness, cfg.color_r, cfg.color_g, cfg.color_b);
+                        break;
+                    }
+                    staircase_led_set_step((uint16_t)step, false, 0, 0, 0, 0);
+                    vTaskDelay(pdMS_TO_TICKS(cfg.step_off_time_ms));
+                }
+                if (current_state == STAIRCASE_STATE_OFF_DOWN) {
+                    current_state = STAIRCASE_STATE_IDLE;
+                    staircase_led_all_off();
+                    ESP_LOGI(TAG, "Finished turning OFF -> IDLE");
+                }
+                break;
+
+            case STAIRCASE_STATE_MANUAL:
+                vTaskDelay(pdMS_TO_TICKS(100));
+                break;
+        }
+    }
+}
+
+esp_err_t staircase_init(staircase_settings_t *settings)
+{
+    cfg = *settings;
+    xTaskCreate(fsm_task, "stair_fsm_task", 4096, NULL, 5, &fsm_task_handle);
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'staircase_led.h',
+    path: 'main/staircase_led.h',
+    category: 'driver',
+    description: 'Интерфейс драйвера светодиодной ленты WS2812B (ESP-IDF led_strip RMT).',
+    code: `#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t staircase_led_init(const staircase_settings_t *settings);
+void staircase_led_set_step(uint16_t step_idx, bool on, uint8_t brightness, uint8_t r, uint8_t g, uint8_t b);
+void staircase_led_toggle_step(uint16_t step_idx);
+bool staircase_led_step_is_on(uint16_t step_idx);
+void staircase_led_all_on(uint8_t brightness, uint8_t r, uint8_t g, uint8_t b);
+void staircase_led_all_off(void);
+void staircase_led_clear(void);`
+  },
+  {
+    name: 'led_strip.c',
+    path: 'main/led_strip.c',
+    category: 'driver',
+    description: 'Драйвер адресной светодиодной ленты WS2812B через ESP-IDF RMT драйвер.',
+    code: `#include "staircase_led.h"
+#include "led_strip.h"
+#include "esp_log.h"
+#include <string.h>
+
+static const char *TAG = "LED_STRIP";
+
+static led_strip_handle_t led_strip = NULL;
+static uint16_t total_leds = 0;
+static uint16_t num_steps = 0;
+static uint16_t leds_per_step = 0;
+static bool *step_states = NULL;
+
+esp_err_t staircase_led_init(const staircase_settings_t *settings)
+{
+    num_steps = settings->steps;
+    leds_per_step = settings->pixels_per_step;
+    total_leds = num_steps * leds_per_step;
+
+    if (step_states) {
+        free(step_states);
+    }
+    step_states = (bool*)calloc(num_steps, sizeof(bool));
+
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = settings->led_gpio,
+        .max_leds = total_leds,
+        .led_model = LED_MODEL_WS2812,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .flags = {
+            .invert_out = false,
+        }
+    };
+
+    led_strip_rmt_config_t rmt_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000,
+        .flags = {
+            .with_dma = false,
+        }
+    };
+
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+    led_strip_clear(led_strip);
+    ESP_LOGI(TAG, "LED strip initialized: %d steps, %d pixels/step, total %d pixels on GPIO %d",
+             num_steps, leds_per_step, total_leds, settings->led_gpio);
+    return ESP_OK;
+}
+
+void staircase_led_set_step(uint16_t step_idx, bool on, uint8_t brightness, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (!led_strip || step_idx >= num_steps) return;
+
+    step_states[step_idx] = on;
+    uint16_t start_led = step_idx * leds_per_step;
+
+    uint8_t adj_r = on ? (uint8_t)((r * brightness) / 100) : 0;
+    uint8_t adj_g = on ? (uint8_t)((g * brightness) / 100) : 0;
+    uint8_t adj_b = on ? (uint8_t)((b * brightness) / 100) : 0;
+
+    for (uint16_t i = 0; i < leds_per_step; i++) {
+        led_strip_set_pixel(led_strip, start_led + i, adj_r, adj_g, adj_b);
+    }
+    led_strip_refresh(led_strip);
+}
+
+void staircase_led_toggle_step(uint16_t step_idx)
+{
+    if (step_idx >= num_steps) return;
+    bool current = step_states[step_idx];
+    staircase_led_set_step(step_idx, !current, 80, 255, 255, 255);
+}
+
+bool staircase_led_step_is_on(uint16_t step_idx)
+{
+    if (!step_states || step_idx >= num_steps) return false;
+    return step_states[step_idx];
+}
+
+void staircase_led_all_on(uint8_t brightness, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (!led_strip) return;
+    uint8_t adj_r = (uint8_t)((r * brightness) / 100);
+    uint8_t adj_g = (uint8_t)((g * brightness) / 100);
+    uint8_t adj_b = (uint8_t)((b * brightness) / 100);
+
+    for (uint16_t i = 0; i < total_leds; i++) {
+        led_strip_set_pixel(led_strip, i, adj_r, adj_g, adj_b);
+    }
+    for (uint16_t s = 0; s < num_steps; s++) {
+        step_states[s] = true;
+    }
+    led_strip_refresh(led_strip);
+}
+
+void staircase_led_all_off(void)
+{
+    if (!led_strip) return;
+    led_strip_clear(led_strip);
+    if (step_states) {
+        memset(step_states, 0, num_steps * sizeof(bool));
+    }
+}
+
+void staircase_led_clear(void)
+{
+    staircase_led_all_off();
+}`
+  },
+  {
+    name: 'web_common.h',
+    path: 'main/web_common.h',
+    category: 'web',
+    description: 'Общие функции веб-сервера (шаблонизатор страниц, URL-декодер, таймер перезагрузки).',
+    code: `#ifndef WEB_COMMON_H
+#define WEB_COMMON_H
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <ctype.h>
+
+#include "esp_log.h"
+#include "esp_http_server.h"
+#include "esp_system.h"
+#include "esp_timer.h"
+
+#include "settings.h"
+#include "staircase_led.h"
+#include "staircase.h"
+#include "sensors.h"
+#include "wifi_manager.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void web_url_decode(char *dst, const char *src, size_t max_len);
+bool web_get_post_param(const char *buf, const char *key, char *dest, size_t dest_len);
+int web_get_post_param_int(const char *buf, const char *key, int default_val);
+void web_schedule_restart(uint32_t delay_ms);
+
+esp_err_t web_send_html_header(httpd_req_t *req, const char *title);
+esp_err_t web_send_html_footer(httpd_req_t *req);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // WEB_COMMON_H`
+  },
+  {
+    name: 'web_common.c',
+    path: 'main/web_common.c',
+    category: 'web',
+    description: 'Реализация общих утилит HTTP-сервера и HTML-лейаута.',
+    code: `#include "web_common.h"
+
+static const char *TAG = "WEB_COMMON";
+
+static void restart_timer_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Rebooting system now...");
+    esp_restart();
+}
+
+void web_schedule_restart(uint32_t delay_ms)
+{
+    esp_timer_create_args_t timer_args = {
+        .callback = restart_timer_cb,
+        .name = "restart_timer"
+    };
+    esp_timer_handle_t timer;
+    if (esp_timer_create(&timer_args, &timer) == ESP_OK) {
+        esp_timer_start_once(timer, (uint64_t)delay_ms * 1000);
+    }
+}
+
+void web_url_decode(char *dst, const char *src, size_t max_len)
+{
+    char a, b;
+    size_t written = 0;
+    while (*src && written < max_len - 1)
+    {
+        if (*src == '%' &&
+            ((a = src[1]) && (b = src[2])) &&
+            (isxdigit((int)a) && isxdigit((int)b)))
+        {
+            if (a >= 'a') a -= 'a' - 'A';
+            if (a >= 'A') a -= ('A' - 10);
+            else a -= '0';
+
+            if (b >= 'a') b -= 'a' - 'A';
+            if (b >= 'A') b -= ('A' - 10);
+            else b -= '0';
+
+            *dst++ = (char)(16 * a + b);
+            src += 3;
+        }
+        else if (*src == '+')
+        {
+            *dst++ = ' ';
+            src++;
+        }
+        else
+        {
+            *dst++ = *src++;
+        }
+        written++;
+    }
+    *dst = '\0';
+}
+
+bool web_get_post_param(const char *buf, const char *key, char *dest, size_t dest_len)
+{
+    char search_key[64];
+    snprintf(search_key, sizeof(search_key), "%s=", key);
+
+    const char *start = strstr(buf, search_key);
+    if (!start && strncmp(buf, search_key, strlen(search_key)) != 0) {
+        return false;
+    }
+    if (!start) start = buf;
+
+    start += strlen(search_key);
+    const char *end = strchr(start, '&');
+    size_t len = end ? (size_t)(end - start) : strlen(start);
+
+    char temp[128];
+    if (len >= sizeof(temp)) len = sizeof(temp) - 1;
+    strncpy(temp, start, len);
+    temp[len] = '\0';
+
+    web_url_decode(dest, temp, dest_len);
+    return true;
+}
+
+int web_get_post_param_int(const char *buf, const char *key, int default_val)
+{
+    char str[32];
+    if (web_get_post_param(buf, key, str, sizeof(str))) {
+        return atoi(str);
+    }
+    return default_val;
+}
+
+esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
+{
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    
+    httpd_resp_sendstr_chunk(req,
+        "<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    );
+
+    char chunk[256];
+    snprintf(chunk, sizeof(chunk), "<title>%s | ESP Lestn v2</title>", title);
+    httpd_resp_sendstr_chunk(req, chunk);
+
+    httpd_resp_sendstr_chunk(req,
+        "<style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;margin:0;padding:16px;background:#0f172a;color:#f8fafc;line-height:1.5}"
+        ".wrap{max-width:680px;margin:0 auto}"
+        ".card{background:#1e293b;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.3);border:1px solid #334155}"
+        "h1,h2,h3{margin:0 0 12px 0;font-weight:600}"
+        "h1{font-size:22px;color:#38bdf8}h2{font-size:18px;color:#cbd5e1}"
+        ".nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}"
+        ".nav a{padding:8px 16px;border-radius:8px;background:#334155;color:#f8fafc;text-decoration:none;font-size:14px;font-weight:500}"
+        ".nav a.active{background:#0284c7;color:#fff}"
+        ".btn{display:inline-block;padding:10px 18px;border-radius:8px;border:none;background:#0284c7;color:#fff;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center}"
+        ".btn-sm{padding:6px 12px;font-size:12px}"
+        ".btn-danger{background:#dc2626}.btn-success{background:#16a34a}.btn-warning{background:#d97706}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0}"
+        ".form-group{margin-bottom:14px}"
+        "label{display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;font-weight:500}"
+        "input,select{width:100%;box-sizing:border-box;padding:10px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:#f8fafc;font-size:14px}"
+        ".badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600}"
+        ".badge-green{background:#064e3b;color:#34d399}.badge-red{background:#7f1d1d;color:#f87171}.badge-blue{background:#0c4a6e;color:#38bdf8}"
+        ".step-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155}"
+        ".step-row:last-child{border-bottom:none}"
+        "</style></head><body><div class='wrap'>"
+        "<h1>✨ Умная лестница ESP-Lestn v2</h1>"
+        "<div class='nav'>"
+        "<a href='/'>Главная</a>"
+        "<a href='/settings'>Настройки</a>"
+        "<a href='/wifi'>Wi-Fi</a>"
+        "</div>"
+    );
+    return ESP_OK;
+}
+
+esp_err_t web_send_html_footer(httpd_req_t *req)
+{
+    httpd_resp_sendstr_chunk(req, "</div></body></html>");
+    return httpd_resp_sendstr_chunk(req, NULL);
+}`
+  },
+  {
+    name: 'web_routes.h',
+    path: 'main/web_routes.h',
+    category: 'web',
+    description: 'Интерфейсы отдельных обработчиков HTTP-маршрутов.',
+    code: `#ifndef WEB_ROUTES_H
+#define WEB_ROUTES_H
+
+#include "web_common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Главная страница */
+esp_err_t index_handler(httpd_req_t *req);
+
+/* Настройки */
+esp_err_t settings_get_handler(httpd_req_t *req);
+esp_err_t settings_post_handler(httpd_req_t *req);
+
+/* Wi-Fi */
+esp_err_t wifi_get_handler(httpd_req_t *req);
+esp_err_t wifi_post_handler(httpd_req_t *req);
+
+/* REST API */
+esp_err_t api_state_handler(httpd_req_t *req);
+esp_err_t api_trigger_handler(httpd_req_t *req);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // WEB_ROUTES_H`
+  },
+  {
+    name: 'web_page_index.c',
+    path: 'main/web_page_index.c',
+    category: 'web',
+    description: 'Обработчик главной страницы (дашборд состояния, кнопки ручного запуска ступеней).',
+    code: `#include "web_routes.h"
+
+static const char *TAG = "WEB_INDEX";
+static staircase_settings_t *cfg = NULL;
+
+void web_index_set_settings(staircase_settings_t *settings)
+{
+    cfg = settings;
+}
+
+esp_err_t index_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    web_send_html_header(req, "Управление");
+
+    httpd_resp_sendstr_chunk(req, "<div class='card'><h2>Состояние лестницы</h2>");
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "<p>Статус FSM: <span id='stair-state' class='badge badge-blue'>%s</span></p>", staircase_get_state_str());
+    httpd_resp_sendstr_chunk(req, buf);
+
+    snprintf(buf, sizeof(buf), "<p>Таймер удержания: <strong id='hold-time'>%u мс</strong></p>", (unsigned int)staircase_get_hold_remaining_ms());
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Нижний датчик</div>");
+    snprintf(buf, sizeof(buf), "<span id='sensor-bottom' class='badge %s'>%s</span></div>",
+        sensor_bottom_active() ? "badge-green" : "badge-red",
+        sensor_bottom_active() ? "АКТИВЕН" : "НЕТ");
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Верхний датчик</div>");
+    snprintf(buf, sizeof(buf), "<span id='sensor-top' class='badge %s'>%s</span></div></div>",
+        sensor_top_active() ? "badge-green" : "badge-red",
+        sensor_top_active() ? "АКТИВЕН" : "НЕТ");
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<div class='grid'>"
+        "<button class='btn btn-success' onclick=\\"fetch('/api/trigger?dir=bottom').then(updateState)\\">🚶 Пройти снизу</button>"
+        "<button class='btn btn-success' onclick=\\"fetch('/api/trigger?dir=top').then(updateState)\\">🚶 Пройти сверху</button>"
+        "<button class='btn' onclick=\\"fetch('/api/trigger?dir=all_on').then(updateState)\\">💡 Включить всё</button>"
+        "<button class='btn btn-danger' onclick=\\"fetch('/api/trigger?dir=all_off').then(updateState)\\">🌑 Выключить всё</button>"
+        "</div>"
+        "</div>"
+    );
+
+    snprintf(buf, sizeof(buf), "<div class='card'><h2>Ступени (%u шт.)</h2><div id='steps-list'>", (unsigned int)cfg->steps);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    /* Список ступеней */
+    for (uint16_t s = 0; s < cfg->steps; s++)
+    {
+        bool on = staircase_led_step_is_on(s);
+        snprintf(buf, sizeof(buf),
+            "<div class='step-row'>"
+            "<span>Ступень #%u</span>"
+            "<div>"
+            "<span class='badge %s' id='step-badge-%u'>%s</span> "
+            "<button class='btn btn-sm' onclick=\\"fetch('/api/trigger?dir=toggle&step=%u').then(updateState)\\">Переключить</button>"
+            "</div>"
+            "</div>",
+            (unsigned int)(s + 1),
+            on ? "badge-green" : "badge-red",
+            (unsigned int)s,
+            on ? "ВКЛ" : "ВЫКЛ",
+            (unsigned int)s
+        );
+        httpd_resp_sendstr_chunk(req, buf);
+    }
+
+    const char *script =
+        "</div></div>"
+        "<script>"
+        "function updateState(){"
+        "fetch('/api/state').then(r=>r.json()).then(d=>{"
+        "document.getElementById('stair-state').innerText=d.state;"
+        "document.getElementById('hold-time').innerText=d.hold_ms+' мс';"
+        "var sb=document.getElementById('sensor-bottom');"
+        "sb.className='badge '+(d.bottom_sensor?'badge-green':'badge-red');"
+        "sb.innerText=d.bottom_sensor?'АКТИВЕН':'НЕТ';"
+        "var st=document.getElementById('sensor-top');"
+        "st.className='badge '+(d.top_sensor?'badge-green':'badge-red');"
+        "st.innerText=d.top_sensor?'АКТИВЕН':'НЕТ';"
+        "if(d.steps){d.steps.forEach((on,i)=>{"
+        "var el=document.getElementById('step-badge-'+i);"
+        "if(el){el.className='badge '+(on?'badge-green':'badge-red');el.innerText=on?'ВКЛ':'ВЫКЛ';}"
+        "});}"
+        "});}"
+        "setInterval(updateState,800);"
+        "</script>";
+    httpd_resp_sendstr_chunk(req, script);
+
+    return web_send_html_footer(req);
+}`
+  },
+  {
+    name: 'web_page_settings.c',
+    path: 'main/web_page_settings.c',
+    category: 'web',
+    description: 'Обработчик страницы настроек параметров лестницы, таймингов, GPIO и яркости.',
+    code: `#include "web_routes.h"
+
+static const char *TAG = "WEB_SETTINGS";
+static staircase_settings_t *cfg = NULL;
+
+void web_settings_set_settings(staircase_settings_t *settings)
+{
+    cfg = settings;
+}
+
+esp_err_t settings_get_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    web_send_html_header(req, "Настройки");
+
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card'>"
+        "<h2>Параметры лестницы</h2>"
+        "<form method='POST' action='/settings'>"
+        "<div class='grid'>"
+        "<div class='form-group'><label>Количество ступеней</label>"
+    );
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "<input type='number' name='steps' value='%u' min='1' max='50'></div>", (unsigned int)cfg->steps);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Диодов на ступень</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='pixels' value='%u' min='1' max='50'></div></div>", (unsigned int)cfg->pixels_per_step);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Яркость (0-100%)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='brightness' value='%u' min='1' max='100'></div>", (unsigned int)cfg->brightness);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Ночная яркость (%)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='night_brightness' value='%u' min='1' max='100'></div></div>", (unsigned int)cfg->night_brightness);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Задержка включения (мс)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='step_on' value='%u' min='20' max='5000'></div>", (unsigned int)cfg->step_on_time_ms);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Задержка выключения (мс)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='step_off' value='%u' min='20' max='5000'></div>", (unsigned int)cfg->step_off_time_ms);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Время удержания (мс)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='hold' value='%u' min='500' max='60000'></div></div>", (unsigned int)cfg->hold_time_ms);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<h2>Цвет подсветки (RGB)</h2><div class='grid'><div class='form-group'><label>Красный (R)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='cr' value='%u' min='0' max='255'></div>", (unsigned int)cfg->color_r);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Зеленый (G)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='cg' value='%u' min='0' max='255'></div>", (unsigned int)cfg->color_g);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Синий (B)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='cb' value='%u' min='0' max='255'></div></div>", (unsigned int)cfg->color_b);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<h2>Датчики и GPIO</h2><div class='grid'><div class='form-group'><label>GPIO ленты WS2812</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_led' value='%u'></div>", (unsigned int)cfg->led_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO нижнего датчика</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_sb' value='%u'></div>", (unsigned int)cfg->sensor_bottom_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO верхнего датчика</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st' value='%u'></div></div>", (unsigned int)cfg->sensor_top_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<div class='grid'>"
+        "<div class='form-group'><label>Активный уровень датчиков</label><select name='active_high'>"
+    );
+    snprintf(buf, sizeof(buf), "<option value='1' %s>HIGH (3.3V / PIR датчик)</option><option value='0' %s>LOW (GND / Оптический)</option></select></div>",
+        cfg->sensor_active_high ? "selected" : "",
+        !cfg->sensor_active_high ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Фильтр дребезга (мс)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='debounce' value='%u' min='10' max='500'></div></div>", (unsigned int)cfg->sensor_debounce_ms);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Ночной режим</label><select name='night_mode'>");
+    snprintf(buf, sizeof(buf), "<option value='1' %s>Включен</option><option value='0' %s>Выключен</option></select></div>",
+        cfg->night_mode ? "selected" : "",
+        !cfg->night_mode ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<button type='submit' class='btn btn-success' style='width:100%;margin-top:10px'>💾 Сохранить настройки</button>"
+        "</form>"
+        "</div>"
+    );
+
+    return web_send_html_footer(req);
+}
+
+esp_err_t settings_post_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    char post_buf[1024] = {0};
+    int total_len = req->content_len;
+    if (total_len >= (int)sizeof(post_buf)) total_len = (int)sizeof(post_buf) - 1;
+
+    int cur_len = 0;
+    while (cur_len < total_len) {
+        int received = httpd_req_recv(req, post_buf + cur_len, total_len - cur_len);
+        if (received <= 0) break;
+        cur_len += received;
+    }
+    post_buf[cur_len] = '\0';
+
+    cfg->steps = (uint16_t)web_get_post_param_int(post_buf, "steps", cfg->steps);
+    cfg->pixels_per_step = (uint16_t)web_get_post_param_int(post_buf, "pixels", cfg->pixels_per_step);
+    cfg->brightness = (uint8_t)web_get_post_param_int(post_buf, "brightness", cfg->brightness);
+    cfg->night_brightness = (uint8_t)web_get_post_param_int(post_buf, "night_brightness", cfg->night_brightness);
+    cfg->step_on_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_on", cfg->step_on_time_ms);
+    cfg->step_off_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_off", cfg->step_off_time_ms);
+    cfg->hold_time_ms = (uint16_t)web_get_post_param_int(post_buf, "hold", cfg->hold_time_ms);
+
+    cfg->color_r = (uint8_t)web_get_post_param_int(post_buf, "cr", cfg->color_r);
+    cfg->color_g = (uint8_t)web_get_post_param_int(post_buf, "cg", cfg->color_g);
+    cfg->color_b = (uint8_t)web_get_post_param_int(post_buf, "cb", cfg->color_b);
+
+    cfg->led_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_led", cfg->led_gpio);
+    cfg->sensor_bottom_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_sb", cfg->sensor_bottom_gpio);
+    cfg->sensor_top_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_st", cfg->sensor_top_gpio);
+
+    cfg->sensor_active_high = (web_get_post_param_int(post_buf, "active_high", 1) == 1);
+    cfg->sensor_debounce_ms = (uint16_t)web_get_post_param_int(post_buf, "debounce", cfg->sensor_debounce_ms);
+    cfg->night_mode = (web_get_post_param_int(post_buf, "night_mode", 1) == 1);
+
+    settings_save(cfg);
+    staircase_apply_settings(cfg);
+
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/settings");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'web_page_wifi.c',
+    path: 'main/web_page_wifi.c',
+    category: 'web',
+    description: 'Обработчик страницы настройки Wi-Fi (SSID, пароль, mDNS имя, перезагрузка).',
+    code: `#include "web_routes.h"
+
+static const char *TAG = "WEB_WIFI";
+static staircase_settings_t *cfg = NULL;
+
+void web_wifi_set_settings(staircase_settings_t *settings)
+{
+    cfg = settings;
+}
+
+esp_err_t wifi_get_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    web_send_html_header(req, "Настройка Wi-Fi");
+
+    httpd_resp_sendstr_chunk(req, "<div class='card'><h2>Сеть Wi-Fi</h2>");
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf),
+        "<p>Текущий IP: <strong>%s</strong> (%s)</p><form method='POST' action='/wifi'>",
+        wifi_manager_get_ip(),
+        wifi_manager_is_ap_mode() ? "Точка доступа" : "Подключено к роутеру"
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    snprintf(buf, sizeof(buf),
+        "<div class='form-group'><label>Имя сети (SSID)</label><input type='text' name='ssid' value='%s' required></div>",
+        cfg->wifi_ssid
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    snprintf(buf, sizeof(buf),
+        "<div class='form-group'><label>Пароль</label><input type='password' name='pass' value='%s' placeholder='••••••••'></div>",
+        cfg->wifi_password
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    snprintf(buf, sizeof(buf),
+        "<div class='form-group'><label>Имя устройства (mDNS)</label><input type='text' name='hostname' value='%s'></div>",
+        cfg->hostname
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<button type='submit' class='btn btn-success' style='width:100%;margin-top:10px'>💾 Сохранить и перезагрузить</button>"
+        "</form>"
+        "</div>"
+    );
+
+    return web_send_html_footer(req);
+}
+
+esp_err_t wifi_post_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    char post_buf[512] = {0};
+    int total_len = req->content_len;
+    if (total_len >= (int)sizeof(post_buf)) total_len = (int)sizeof(post_buf) - 1;
+
+    int cur_len = 0;
+    while (cur_len < total_len) {
+        int received = httpd_req_recv(req, post_buf + cur_len, total_len - cur_len);
+        if (received <= 0) break;
+        cur_len += received;
+    }
+    post_buf[cur_len] = '\0';
+
+    web_get_post_param(post_buf, "ssid", cfg->wifi_ssid, sizeof(cfg->wifi_ssid));
+    web_get_post_param(post_buf, "pass", cfg->wifi_password, sizeof(cfg->wifi_password));
+    web_get_post_param(post_buf, "hostname", cfg->hostname, sizeof(cfg->hostname));
+
+    settings_save(cfg);
+
+    web_send_html_header(req, "Перезагрузка...");
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card'>"
+        "<h2>Настройки Wi-Fi сохранены!</h2>"
+        "<p>Устройство перезагружается для подключения к сети...</p>"
+        "<p>Пожалуйста, подождите 10 секунд.</p>"
+        "</div>"
+    );
+    web_send_html_footer(req);
+
+    web_schedule_restart(1500);
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'web_api.c',
+    path: 'main/web_api.c',
+    category: 'web',
+    description: 'REST API обработчики (/api/state получение JSON состояния, /api/trigger вызов анимаций).',
+    code: `#include "web_routes.h"
+
+static const char *TAG = "WEB_API";
+static staircase_settings_t *cfg = NULL;
+
+void web_api_set_settings(staircase_settings_t *settings)
+{
+    cfg = settings;
+}
+
+esp_err_t api_state_handler(httpd_req_t *req)
+{
+    if (!cfg) return ESP_FAIL;
+
+    httpd_resp_set_type(req, "application/json");
+
+    char json[1536];
+    int offset = snprintf(json, sizeof(json),
+        "{\"state\":\"%s\",\"hold_ms\":%u,\"bottom_sensor\":%s,\"top_sensor\":%s,\"heap\":%lu,\"steps\":[",
+        staircase_get_state_str(),
+        (unsigned int)staircase_get_hold_remaining_ms(),
+        sensor_bottom_active() ? "true" : "false",
+        sensor_top_active() ? "true" : "false",
+        (unsigned long)esp_get_free_heap_size()
+    );
+
+    for (uint16_t s = 0; s < cfg->steps && offset < (int)sizeof(json) - 16; s++) {
+        bool on = staircase_led_step_is_on(s);
+        offset += snprintf(json + offset, sizeof(json) - offset, "%s%s", s > 0 ? "," : "", on ? "true" : "false");
+    }
+
+    snprintf(json + offset, sizeof(json) - offset, "]}");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t api_trigger_handler(httpd_req_t *req)
+{
+    char query[128] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK)
+    {
+        char dir[32] = {0};
+        if (httpd_query_key_value(query, "dir", dir, sizeof(dir)) == ESP_OK)
+        {
+            if (strcmp(dir, "bottom") == 0) {
+                staircase_trigger_bottom();
+            } else if (strcmp(dir, "top") == 0) {
+                staircase_trigger_top();
+            } else if (strcmp(dir, "all_on") == 0) {
+                staircase_set_manual_on();
+            } else if (strcmp(dir, "all_off") == 0) {
+                staircase_set_manual_off();
+            } else if (strcmp(dir, "toggle") == 0) {
+                char step_str[16] = {0};
+                if (httpd_query_key_value(query, "step", step_str, sizeof(step_str)) == ESP_OK) {
+                    uint16_t step_idx = (uint16_t)atoi(step_str);
+                    staircase_led_toggle_step(step_idx);
+                }
+            }
+        }
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+}`
+  },
+  {
+    name: 'web_server.c',
+    path: 'main/web_server.c',
+    category: 'web',
+    description: 'Главная точка регистрации эндпоинтов и запуска HTTP сервера ESP-IDF.',
+    code: `#include "web_server.h"
+#include "web_routes.h"
+#include "web_common.h"
+
+static const char *TAG = "WEB_SERVER";
+static httpd_handle_t server = NULL;
+
+extern void web_index_set_settings(staircase_settings_t *settings);
+extern void web_settings_set_settings(staircase_settings_t *settings);
+extern void web_wifi_set_settings(staircase_settings_t *settings);
+extern void web_api_set_settings(staircase_settings_t *settings);
+
+esp_err_t web_server_start(staircase_settings_t *settings)
+{
+    web_index_set_settings(settings);
+    web_settings_set_settings(settings);
+    web_wifi_set_settings(settings);
+    web_api_set_settings(settings);
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_uri_handlers = 16;
+    config.stack_size = 8192;
+    config.lru_purge_enable = true;
+    config.max_resp_headers = 16;
+
+    ESP_LOGI(TAG, "Starting HTTP Web Server on port %d...", config.server_port);
+
+    esp_err_t err = httpd_start(&server, &config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    httpd_uri_t uri_index = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_get = { .uri = "/settings", .method = HTTP_GET, .handler = settings_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_post = { .uri = "/settings", .method = HTTP_POST, .handler = settings_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_get = { .uri = "/wifi", .method = HTTP_GET, .handler = wifi_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_post = { .uri = "/wifi", .method = HTTP_POST, .handler = wifi_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_state = { .uri = "/api/state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_trigger = { .uri = "/api/trigger", .method = HTTP_GET, .handler = api_trigger_handler, .user_ctx = NULL };
+
+    /* Для обратной совместимости */
+    httpd_uri_t uri_led_state = { .uri = "/led-state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+
+    httpd_register_uri_handler(server, &uri_index);
+    httpd_register_uri_handler(server, &uri_settings_get);
+    httpd_register_uri_handler(server, &uri_settings_post);
+    httpd_register_uri_handler(server, &uri_wifi_get);
+    httpd_register_uri_handler(server, &uri_wifi_post);
+    httpd_register_uri_handler(server, &uri_api_state);
+    httpd_register_uri_handler(server, &uri_api_trigger);
+    httpd_register_uri_handler(server, &uri_led_state);
+
+    ESP_LOGI(TAG, "Web server started with endpoints: /, /settings, /wifi, /api/state, /api/trigger");
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'web_server.h',
+    path: 'main/web_server.h',
+    category: 'web',
+    description: 'Интерфейс веб-сервера управления.',
+    code: `#pragma once
+
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t web_server_start(staircase_settings_t *settings);`
+  },
+  {
+    name: 'sensors.h',
+    path: 'main/sensors.h',
+    category: 'driver',
+    description: 'Интерфейс драйвера оптических / PIR датчиков присутствия.',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t sensors_init(const staircase_settings_t *settings);
+bool sensor_bottom_active(void);
+bool sensor_top_active(void);
+int sensor_bottom_level(void);
+int sensor_top_level(void);`
+  },
+  {
+    name: 'sensors.c',
+    path: 'main/sensors.c',
+    category: 'driver',
+    description: 'Драйвер оптических/PIR датчиков с аппаратным подавлением дребезга (software debounce).',
+    code: `#include "sensors.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+
+static const char *TAG = "SENSORS";
+
+static staircase_settings_t cfg;
+static int64_t last_bottom_change_us = 0;
+static int64_t last_top_change_us = 0;
+static bool last_bottom_state = false;
+static bool last_top_state = false;
+
+esp_err_t sensors_init(const staircase_settings_t *settings)
+{
+    cfg = *settings;
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = cfg.sensor_active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
+        .pull_down_en = cfg.sensor_active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    ESP_LOGI(TAG, "Sensors initialized: Bottom GPIO %d, Top GPIO %d (Active: %s, Debounce: %d ms)",
+             cfg.sensor_bottom_gpio, cfg.sensor_top_gpio,
+             cfg.sensor_active_high ? "HIGH" : "LOW",
+             cfg.sensor_debounce_ms);
+    return ESP_OK;
+}
+
+int sensor_bottom_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_bottom_gpio);
+}
+
+int sensor_top_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_top_gpio);
+}
+
+bool sensor_bottom_active(void)
+{
+    int level = sensor_bottom_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_bottom_state) {
+        if ((now_us - last_bottom_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_bottom_state = raw_active;
+            last_bottom_change_us = now_us;
+        }
+    }
+    return last_bottom_state;
+}
+
+bool sensor_top_active(void)
+{
+    int level = sensor_top_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_top_state) {
+        if ((now_us - last_top_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_top_state = raw_active;
+            last_top_change_us = now_us;
+        }
+    }
+    return last_top_state;
+}`
+  },
+  {
+    name: 'settings.h',
+    path: 'main/settings.h',
+    category: 'core',
+    description: 'Структура конфигурации и интерфейс сохранения в энергонезависимую память (NVS).',
+    code: `#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+
+typedef struct {
+    uint16_t steps;
+    uint16_t pixels_per_step;
+    uint8_t brightness;
+    uint8_t night_brightness;
+    uint16_t step_on_time_ms;
+    uint16_t step_off_time_ms;
+    uint16_t hold_time_ms;
+    uint8_t color_r;
+    uint8_t color_g;
+    uint8_t color_b;
+    uint8_t led_gpio;
+    uint8_t sensor_bottom_gpio;
+    uint8_t sensor_top_gpio;
+    bool sensor_active_high;
+    uint16_t sensor_debounce_ms;
+    bool night_mode;
+    char wifi_ssid[32];
+    char wifi_password[64];
+    char hostname[32];
+} staircase_settings_t;
+
+void settings_init(staircase_settings_t *settings);
+esp_err_t settings_load(staircase_settings_t *settings);
+esp_err_t settings_save(const staircase_settings_t *settings);
+esp_err_t settings_reset_defaults(staircase_settings_t *settings);`
+  },
+  {
+    name: 'settings.c',
+    path: 'main/settings.c',
+    category: 'core',
+    description: 'Сохранение и загрузка настроек лестницы в ESP32 NVS.',
+    code: `#include "settings.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_log.h"
+#include <string.h>
+
+static const char *TAG = "SETTINGS";
+static const char *NVS_NAMESPACE = "stair_cfg";
+
+void settings_init(staircase_settings_t *settings)
+{
+    settings->steps = 18;
+    settings->pixels_per_step = 1;
+    settings->brightness = 80;
+    settings->night_brightness = 20;
+    settings->step_on_time_ms = 150;
+    settings->step_off_time_ms = 150;
+    settings->hold_time_ms = 5000;
+    settings->color_r = 255;
+    settings->color_g = 220;
+    settings->color_b = 180;
+    settings->led_gpio = 4;
+    settings->sensor_bottom_gpio = 18;
+    settings->sensor_top_gpio = 19;
+    settings->sensor_active_high = true;
+    settings->sensor_debounce_ms = 50;
+    settings->night_mode = false;
+    strncpy(settings->wifi_ssid, "ESP-Lestn", sizeof(settings->wifi_ssid));
+    settings->wifi_password[0] = '\0';
+    strncpy(settings->hostname, "esp-lestn", sizeof(settings->hostname));
+}
+
+esp_err_t settings_load(staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "No saved settings found in NVS, using defaults");
+        return err;
+    }
+
+    size_t required_size = sizeof(staircase_settings_t);
+    err = nvs_get_blob(nvs_h, "config", settings, &required_size);
+    nvs_close(nvs_h);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Settings successfully loaded from NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to read blob from NVS: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t settings_save(const staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_set_blob(nvs_h, "config", settings, sizeof(staircase_settings_t));
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_h);
+        ESP_LOGI(TAG, "Settings successfully saved and committed to NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to write blob to NVS: %s", esp_err_to_name(err));
+    }
+
+    nvs_close(nvs_h);
+    return err;
+}
+
+esp_err_t settings_reset_defaults(staircase_settings_t *settings)
+{
+    settings_init(settings);
+    return settings_save(settings);
+}`
+  },
+  {
+    name: 'wifi_manager.c',
+    path: 'main/wifi_manager.c',
+    category: 'driver',
+    description: 'Управление Wi-Fi (автопереключение STA -> AP, mDNS, статический/DHCP IP).',
+    code: `#include "wifi_manager.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "mdns.h"
+
+static const char *TAG = "WIFI_MGR";
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static EventGroupHandle_t wifi_event_group;
+static staircase_settings_t *cfg = NULL;
+static bool is_ap = true;
+static char current_ip[16] = "192.168.4.1";
+static int retry_num = 0;
+#define MAX_STA_RETRIES 5
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (retry_num < MAX_STA_RETRIES) {
+            esp_wifi_connect();
+            retry_num++;
+            ESP_LOGI(TAG, "Retrying Wi-Fi STA connection (%d/%d)...", retry_num, MAX_STA_RETRIES);
+        } else {
+            xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+            ESP_LOGW(TAG, "Failed to connect to STA. Falling back to AP mode.");
+        }
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        snprintf(current_ip, sizeof(current_ip), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Connected to Wi-Fi! IP: %s", current_ip);
+        retry_num = 0;
+        is_ap = false;
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+esp_err_t wifi_manager_start_ap(void)
+{
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = "ESP-Lestn",
+            .ssid_len = strlen("ESP-Lestn"),
+            .channel = 1,
+            .password = "",
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_OPEN
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    is_ap = true;
+    strncpy(current_ip, "192.168.4.1", sizeof(current_ip));
+    ESP_LOGI(TAG, "Access Point started: SSID='ESP-Lestn', IP=%s", current_ip);
+    return ESP_OK;
+}
+
+static esp_err_t start_sta_internal(void)
+{
+    retry_num = 0;
+    wifi_config_t wifi_config = {0};
+    strncpy((char*)wifi_config.sta.ssid, cfg->wifi_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, cfg->wifi_password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Connecting to Wi-Fi SSID: '%s'...", cfg->wifi_ssid);
+
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            pdMS_TO_TICKS(15000));
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to SSID:%s", cfg->wifi_ssid);
+        return ESP_OK;
+    } else {
+        ESP_LOGW(TAG, "Falling back to AP mode");
+        esp_wifi_stop();
+        return wifi_manager_start_ap();
+    }
+}
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings)
+{
+    cfg = settings;
+    wifi_event_group = xEventGroupCreate();
+
+    esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    // Инициализация mDNS
+    mdns_init();
+    mdns_hostname_set(cfg->hostname[0] ? cfg->hostname : "esp-lestn");
+    mdns_instance_name_set("ESP32 Smart Staircase");
+
+    if (cfg->wifi_ssid[0] != '\0' && strcmp(cfg->wifi_ssid, "ESP-Lestn") != 0) {
+        return start_sta_internal();
+    } else {
+        return wifi_manager_start_ap();
+    }
+}
+
+bool wifi_manager_is_connected(void)
+{
+    return !is_ap;
+}
+
+const char *wifi_manager_get_ip(void)
+{
+    return current_ip;
+}
+
+bool wifi_manager_is_ap_mode(void)
+{
+    return is_ap;
+}
+
+esp_err_t wifi_manager_reconnect_sta(void)
+{
+    if (cfg == NULL || cfg->wifi_ssid[0] == '\0') return ESP_ERR_INVALID_STATE;
+    return start_sta_internal();
+}`
+  },
+  {
+    name: 'wifi_manager.h',
+    path: 'main/wifi_manager.h',
+    category: 'driver',
+    description: 'Интерфейс управления Wi-Fi подсистемой.',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings);
+bool wifi_manager_is_connected(void);
+const char *wifi_manager_get_ip(void);
+bool wifi_manager_is_ap_mode(void);
+esp_err_t wifi_manager_start_ap(void);
+esp_err_t wifi_manager_reconnect_sta(void);`
+  },
+  {
+    name: 'time_astro.h',
+    path: 'main/time_astro.h',
+    category: 'core',
+    description: 'Заголовочный файл сервиса времени NTP и астрономического расчета заката/восхода солнца (NOAA).',
+    code: `#ifndef TIME_ASTRO_H
+#define TIME_ASTRO_H
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*time_astro_state_cb_t)(bool is_night);
+
+typedef struct {
+    bool synced;
+    char time_str[32];
+    char sunrise_str[16];
+    char sunset_str[16];
+    bool is_night_time;
+    char next_switch_str[32];
+} time_astro_status_t;
+
+esp_err_t time_astro_init(staircase_settings_t *settings, time_astro_state_cb_t cb);
+void time_astro_apply_settings(const staircase_settings_t *settings);
+bool time_astro_is_synced(void);
+bool time_astro_is_night(void);
+void time_astro_get_status(time_astro_status_t *status);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // TIME_ASTRO_H`
+  },
+  {
+    name: 'time_astro.c',
+    path: 'main/time_astro.c',
+    category: 'core',
+    description: 'Реализация SNTP клиента, алгоритма NOAA для заката/восхода и фоновой задачи переключения режимов.',
+    code: `#include "time_astro.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
+#include <math.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_sntp.h"
+
+static const char *TAG = "TIME_ASTRO";
+
+static staircase_settings_t *cfg = NULL;
+static time_astro_state_cb_t state_callback = NULL;
+static bool sntp_initialized = false;
+static bool time_is_synced = false;
+static bool current_night_state = false;
+
+// Расчет времени заката и восхода по алгоритму NOAA
+static void calculate_solar_times(time_t current_time, float lat, float lon, int tz_offset,
+                                  int *sunrise_min, int *sunset_min)
+{
+    struct tm timeinfo;
+    localtime_r(&current_time, &timeinfo);
+    int day_of_year = timeinfo.tm_yday + 1;
+
+    const double PI_D = 3.14159265358979323846;
+    const double DEG2RAD = PI_D / 180.0;
+    const double RAD2DEG = 180.0 / PI_D;
+
+    double B = (360.0 / 365.0) * (day_of_year - 81) * DEG2RAD;
+    double eot = 9.87 * sin(2 * B) - 7.53 * cos(B) - 1.5 * sin(B);
+    double decl = 23.45 * sin((360.0 / 365.0) * (day_of_year - 81) * DEG2RAD);
+    double decl_rad = decl * DEG2RAD;
+    double lat_rad = (double)lat * DEG2RAD;
+
+    double zenith = 90.8333 * DEG2RAD;
+    double cos_ha = (cos(zenith) - sin(lat_rad) * sin(decl_rad)) / (cos(lat_rad) * cos(decl_rad));
+    if (cos_ha > 1.0) cos_ha = 1.0;
+    if (cos_ha < -1.0) cos_ha = -1.0;
+
+    double ha_deg = acos(cos_ha) * RAD2DEG;
+    double ha_hours = ha_deg / 15.0;
+
+    double solar_noon = 12.0 - ((double)lon / 15.0) - (eot / 60.0) + (double)tz_offset;
+    double sunrise_hour = solar_noon - ha_hours;
+    double sunset_hour = solar_noon + ha_hours;
+
+    while (sunrise_hour < 0.0) sunrise_hour += 24.0;
+    while (sunrise_hour >= 24.0) sunrise_hour -= 24.0;
+    while (sunset_hour < 0.0) sunset_hour += 24.0;
+    while (sunset_hour >= 24.0) sunset_hour -= 24.0;
+
+    if (sunrise_min) *sunrise_min = (int)round(sunrise_hour * 60.0);
+    if (sunset_min) *sunset_min = (int)round(sunset_hour * 60.0);
+}
+
+// Фоновая задача проверки времени и переключения дня/ночи
+static void astro_task(void *arg)
+{
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        if (!cfg) continue;
+
+        time_t now;
+        time(&now);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+
+        if (timeinfo.tm_year > (2020 - 1900)) {
+            time_is_synced = true;
+        }
+
+        bool should_be_night = false;
+        int cur_min = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+
+        if (cfg->schedule_mode == 0 && time_is_synced) {
+            int sunrise_m = 360, sunset_m = 1200;
+            calculate_solar_times(now, cfg->latitude, cfg->longitude, cfg->timezone_offset, &sunrise_m, &sunset_m);
+            int on_time = sunset_m + cfg->sunset_offset_min;
+            int off_time = sunrise_m + cfg->sunrise_offset_min;
+            while (on_time < 0) on_time += 1440;
+            while (on_time >= 1440) on_time -= 1440;
+            while (off_time < 0) off_time += 1440;
+            while (off_time >= 1440) off_time -= 1440;
+
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 1 && time_is_synced) {
+            int on_time = cfg->fixed_on_hour * 60 + cfg->fixed_on_minute;
+            int off_time = cfg->fixed_off_hour * 60 + cfg->fixed_off_minute;
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 2) {
+            should_be_night = true;
+        } else {
+            should_be_night = false;
+        }
+
+        if (should_be_night != current_night_state) {
+            current_night_state = should_be_night;
+            if (state_callback) state_callback(current_night_state);
+        }
+    }
+}`
+  },
+  {
+    name: 'CMakeLists.txt',
+    path: 'main/CMakeLists.txt',
+    category: 'config',
+    description: 'Сборочный скрипт компонента main для ESP-IDF v5.x.',
+    code: `idf_component_register(
+    SRCS
+        "main.c"
+        "staircase.c"
+        "sensors.c"
+        "led_strip.c"
+        "wifi_manager.c"
+        "settings.c"
+        "time_astro.c"
+        "web_common.c"
+        "web_page_index.c"
+        "web_page_settings.c"
+        "web_page_wifi.c"
+        "web_api.c"
+        "web_server.c"
+
+    INCLUDE_DIRS
+        "."
+)
+
+target_compile_options(\${COMPONENT_LIB} PRIVATE -Wno-format-truncation -Wno-format)`
+  }
+];
