@@ -2149,6 +2149,9 @@ target_compile_options(\${COMPONENT_LIB} PRIVATE -Wno-format-truncation -Wno-for
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*.*.*'
+      - 'v*'
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -2162,6 +2165,9 @@ on:
           - esp32
           - esp32s3
           - esp32c3
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -2196,7 +2202,7 @@ jobs:
             --fill-flash-size 4MB \\
             @build/flash_args || true
 
-      - name: Публикация артефактов прошивки (.bin)
+      - name: Публикация артефактов прошивки (Actions Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: esp32-firmware-binaries
@@ -2206,6 +2212,32 @@ jobs:
             ESP_lestn_v2/build/partition_table/partition-table.bin
             ESP_lestn_v2/build/firmware_merged.bin
             ESP_lestn_v2/build/flasher_args.json
-          retention-days: 30`
+          retention-days: 30
+
+      - name: Автоматический релиз по тегу (v1.0.0 и т.д.)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/flasher_args.json
+
+      - name: Автоматический релиз в Releases (latest) при пуше в main
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && !startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "ESP-v2 Свежая автосборка прошивки (Latest)"
+          prerelease: false
+          make_latest: true
+          files: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/flasher_args.json`
   }
 ];
