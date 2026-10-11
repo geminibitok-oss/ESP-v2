@@ -1,0 +1,79 @@
+name: Сборка прошивки ESP32 (ESP-IDF v5)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Целевой чип ESP32'
+        required: true
+        default: 'esp32'
+        type: choice
+        options:
+          - esp32
+          - esp32s3
+          - esp32c3
+
+jobs:
+  build:
+    name: Компиляция прошивки ESP_lestn_v2
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v5.3
+
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Подготовка среды сборки
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target ${{ github.event.inputs.target || 'esp32' }}
+
+      - name: Сборка прошивки
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Создание единого файла прошивки (firmware_merged.bin для 0x0)
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          esptool.py --chip ${{ github.event.inputs.target || 'esp32' }} merge_bin \
+            -o build/firmware_merged.bin \
+            --fill-flash-size 4MB \
+            @build/flash_args || true
+
+      - name: Публикация артефактов прошивки (.bin)
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-firmware-binaries
+          path: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/flasher_args.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Автоматический релиз при установке тега версии
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+          body: |
+            ## Релиз прошивки ESP_lestn_v2
+            - **ESP_lestn_v2.bin**: бинарник приложения (для OTA обновления по Wi-Fi)
+            - **firmware_merged.bin**: полный образ прошивки для USB прошивки с адреса 0x0
+            - **bootloader.bin** и **partition-table.bin**: загрузчик и таблица разделов

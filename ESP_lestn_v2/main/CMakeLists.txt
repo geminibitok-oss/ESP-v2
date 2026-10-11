@@ -12,6 +12,7 @@ idf_component_register(
         "web_page_settings.c"
         "web_page_wifi.c"
         "web_api.c"
+        "web_ota.c"
         "web_server.c"
 
     INCLUDE_DIRS

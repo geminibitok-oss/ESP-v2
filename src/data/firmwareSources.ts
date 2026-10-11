@@ -691,15 +691,17 @@ esp_err_t index_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req, "<div class='grid'><div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Нижний датчик</div>");
-    snprintf(buf, sizeof(buf), "<span id='sensor-bottom' class='badge %s'>%s</span></div>",
+    snprintf(buf, sizeof(buf), "<span id='sensor-bottom' class='badge %s'>%s</span><div id='sensor-bottom-dist' style='font-size:11px;color:#94a3b8;margin-top:4px'>%s</div></div>",
         sensor_bottom_active() ? "badge-green" : "badge-red",
-        sensor_bottom_active() ? "АКТИВЕН" : "НЕТ");
+        sensor_bottom_active() ? "АКТИВЕН" : "НЕТ",
+        sensor_is_ultrasonic() ? "HC-SR04" : "PIR / Оптика");
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req, "<div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Верхний датчик</div>");
-    snprintf(buf, sizeof(buf), "<span id='sensor-top' class='badge %s'>%s</span></div></div>",
+    snprintf(buf, sizeof(buf), "<span id='sensor-top' class='badge %s'>%s</span><div id='sensor-top-dist' style='font-size:11px;color:#94a3b8;margin-top:4px'>%s</div></div></div>",
         sensor_top_active() ? "badge-green" : "badge-red",
-        sensor_top_active() ? "АКТИВЕН" : "НЕТ");
+        sensor_top_active() ? "АКТИВЕН" : "НЕТ",
+        sensor_is_ultrasonic() ? "HC-SR04" : "PIR / Оптика");
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
@@ -749,6 +751,12 @@ esp_err_t index_handler(httpd_req_t *req)
         "var st=document.getElementById('sensor-top');"
         "st.className='badge '+(d.top_sensor?'badge-green':'badge-red');"
         "st.innerText=d.top_sensor?'АКТИВЕН':'НЕТ';"
+        "if(d.sensor_type===1){"
+        "var d1=document.getElementById('sensor-bottom-dist');"
+        "if(d1) d1.innerText='Дистанция: '+(d.bottom_dist_cm<900?d.bottom_dist_cm+' см':'--');"
+        "var d2=document.getElementById('sensor-top-dist');"
+        "if(d2) d2.innerText='Дистанция: '+(d.top_dist_cm<900?d.top_dist_cm+' см':'--');"
+        "}"
         "if(d.steps){d.steps.forEach((on,i)=>{"
         "var el=document.getElementById('step-badge-'+i);"
         "if(el){el.className='badge '+(on?'badge-green':'badge-red');el.innerText=on?'ВКЛ':'ВЫКЛ';}"
@@ -830,21 +838,44 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='cb' value='%u' min='0' max='255'></div></div>", (unsigned int)cfg->color_b);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<h2>Датчики и GPIO</h2><div class='grid'><div class='form-group'><label>GPIO ленты WS2812</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_led' value='%u'></div>", (unsigned int)cfg->led_gpio);
+    httpd_resp_sendstr_chunk(req, "<h2>Датчики и GPIO</h2><div class='grid'><div class='form-group'><label>Тип сенсоров присутствия</label><select name='sensor_type'>");
+    snprintf(buf, sizeof(buf), "<option value='0' %s>PIR / Оптический (цифровой логический вход)</option><option value='1' %s>Ультразвуковой HC-SR04 (эхолокация, см)</option></select></div>",
+        cfg->sensor_type == 0 ? "selected" : "",
+        cfg->sensor_type == 1 ? "selected" : ""
+    );
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO нижнего датчика</label>");
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO ленты WS2812</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_led' value='%u'></div></div>", (unsigned int)cfg->led_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Нижний: GPIO (PIR In или HC-SR04 TRIG)</label>");
     snprintf(buf, sizeof(buf), "<input type='number' name='gpio_sb' value='%u'></div>", (unsigned int)cfg->sensor_bottom_gpio);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO верхнего датчика</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st' value='%u'></div></div>", (unsigned int)cfg->sensor_top_gpio);
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Нижний: ECHO GPIO (только HC-SR04)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_sb_echo' value='%u'></div></div>", (unsigned int)cfg->sensor_bottom_echo_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Верхний: GPIO (PIR In или HC-SR04 TRIG)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st' value='%u'></div>", (unsigned int)cfg->sensor_top_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Верхний: ECHO GPIO (только HC-SR04)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st_echo' value='%u'></div></div>", (unsigned int)cfg->sensor_top_echo_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Порог срабатывания HC-SR04 (см)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='us_trigger_dist' value='%u' min='10' max='300'></div>", (unsigned int)cfg->ultrasonic_trigger_distance_cm);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Макс. дистанция HC-SR04 (см)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='us_max_dist' value='%u' min='50' max='400'></div></div>", (unsigned int)cfg->ultrasonic_max_distance_cm);
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
         "<div class='grid'>"
-        "<div class='form-group'><label>Активный уровень датчиков</label><select name='active_high'>"
+        "<div class='form-group'><label>Активный уровень PIR (HIGH/LOW)</label><select name='active_high'>"
     );
     snprintf(buf, sizeof(buf), "<option value='1' %s>HIGH (3.3V / PIR датчик)</option><option value='0' %s>LOW (GND / Оптический)</option></select></div>",
         cfg->sensor_active_high ? "selected" : "",
@@ -900,9 +931,14 @@ esp_err_t settings_post_handler(httpd_req_t *req)
     cfg->color_g = (uint8_t)web_get_post_param_int(post_buf, "cg", cfg->color_g);
     cfg->color_b = (uint8_t)web_get_post_param_int(post_buf, "cb", cfg->color_b);
 
+    cfg->sensor_type = (uint8_t)web_get_post_param_int(post_buf, "sensor_type", cfg->sensor_type);
     cfg->led_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_led", cfg->led_gpio);
     cfg->sensor_bottom_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_sb", cfg->sensor_bottom_gpio);
+    cfg->sensor_bottom_echo_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_sb_echo", cfg->sensor_bottom_echo_gpio);
     cfg->sensor_top_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_st", cfg->sensor_top_gpio);
+    cfg->sensor_top_echo_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_st_echo", cfg->sensor_top_echo_gpio);
+    cfg->ultrasonic_trigger_distance_cm = (uint16_t)web_get_post_param_int(post_buf, "us_trigger_dist", cfg->ultrasonic_trigger_distance_cm);
+    cfg->ultrasonic_max_distance_cm = (uint16_t)web_get_post_param_int(post_buf, "us_max_dist", cfg->ultrasonic_max_distance_cm);
 
     cfg->sensor_active_high = (web_get_post_param_int(post_buf, "active_high", 1) == 1);
     cfg->sensor_debounce_ms = (uint16_t)web_get_post_param_int(post_buf, "debounce", cfg->sensor_debounce_ms);
@@ -1034,11 +1070,14 @@ esp_err_t api_state_handler(httpd_req_t *req)
 
     char json[1536];
     int offset = snprintf(json, sizeof(json),
-        "{\"state\":\"%s\",\"hold_ms\":%u,\"bottom_sensor\":%s,\"top_sensor\":%s,\"heap\":%lu,\"steps\":[",
+        "{\"state\":\"%s\",\"hold_ms\":%u,\"bottom_sensor\":%s,\"top_sensor\":%s,\"sensor_type\":%u,\"bottom_dist_cm\":%u,\"top_dist_cm\":%u,\"heap\":%lu,\"steps\":[",
         staircase_get_state_str(),
         (unsigned int)staircase_get_hold_remaining_ms(),
         sensor_bottom_active() ? "true" : "false",
         sensor_top_active() ? "true" : "false",
+        (unsigned int)cfg->sensor_type,
+        (unsigned int)sensor_bottom_distance_cm(),
+        (unsigned int)sensor_top_distance_cm(),
         (unsigned long)esp_get_free_heap_size()
     );
 
@@ -1159,10 +1198,11 @@ esp_err_t web_server_start(staircase_settings_t *settings);`
     name: 'sensors.h',
     path: 'main/sensors.h',
     category: 'driver',
-    description: 'Интерфейс драйвера оптических / PIR датчиков присутствия.',
+    description: 'Интерфейс драйвера датчиков присутствия (цифровые PIR/оптические и ультразвуковые HC-SR04).',
     code: `#pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 #include "settings.h"
 
@@ -1170,17 +1210,25 @@ esp_err_t sensors_init(const staircase_settings_t *settings);
 bool sensor_bottom_active(void);
 bool sensor_top_active(void);
 int sensor_bottom_level(void);
-int sensor_top_level(void);`
+int sensor_top_level(void);
+
+// Функции для работы с ультразвуковыми дальномерами HC-SR04
+uint16_t sensor_bottom_distance_cm(void);
+uint16_t sensor_top_distance_cm(void);
+bool sensor_is_ultrasonic(void);`
   },
   {
     name: 'sensors.c',
     path: 'main/sensors.c',
     category: 'driver',
-    description: 'Драйвер оптических/PIR датчиков с аппаратным подавлением дребезга (software debounce).',
+    description: 'Драйвер датчиков присутствия: цифровой режим (PIR/оптика с подавлением дребезга) и ультразвуковой режим HC-SR04 (эхолокация в см с фильтрацией шумов).',
     code: `#include "sensors.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "SENSORS";
 
@@ -1190,23 +1238,131 @@ static int64_t last_top_change_us = 0;
 static bool last_bottom_state = false;
 static bool last_top_state = false;
 
+static uint16_t bottom_dist_cm = 999;
+static uint16_t top_dist_cm = 999;
+
+// Измерение расстояния дальномером HC-SR04 (в сантиметрах)
+static uint16_t measure_hcsr04_distance(gpio_num_t trig_pin, gpio_num_t echo_pin, uint16_t max_dist_cm)
+{
+    // 1. Короткий импульс TRIG 10 мкс
+    gpio_set_level(trig_pin, 0);
+    esp_rom_delay_us(4);
+    gpio_set_level(trig_pin, 1);
+    esp_rom_delay_us(10);
+    gpio_set_level(trig_pin, 0);
+
+    // 2. Ожидание начала импульса ECHO (HIGH) с таймаутом ~10 мс
+    int64_t start_wait = esp_timer_get_time();
+    while (gpio_get_level(echo_pin) == 0) {
+        if ((esp_timer_get_time() - start_wait) > 10000) {
+            return 999; // Таймаут старта
+        }
+    }
+
+    // 3. Измерение длительности импульса ECHO
+    int64_t echo_start = esp_timer_get_time();
+    int64_t max_echo_time = echo_start + (int64_t)max_dist_cm * 58 + 2000;
+
+    while (gpio_get_level(echo_pin) == 1) {
+        if (esp_timer_get_time() > max_echo_time) {
+            return 999; // Превышение максимальной дистанции
+        }
+    }
+    int64_t echo_end = esp_timer_get_time();
+    int64_t duration_us = echo_end - echo_start;
+
+    // Скорость звука ~ 343 м/с -> 1 см за 58.2 мкс
+    uint16_t dist = (uint16_t)(duration_us / 58);
+    if (dist < 2 || dist > max_dist_cm) {
+        return 999;
+    }
+    return dist;
+}
+
+// Фоновая задача опроса ультразвуковых датчиков HC-SR04
+static void ultrasonic_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "HC-SR04 Ultrasonic background polling task started");
+
+    while (1)
+    {
+        if (cfg.sensor_type == 1) {
+            // Опрос нижнего датчика HC-SR04 (TRIG = cfg.sensor_bottom_gpio, ECHO = cfg.sensor_bottom_echo_gpio)
+            uint16_t d_bot = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_bottom_gpio,
+                (gpio_num_t)cfg.sensor_bottom_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            bottom_dist_cm = d_bot;
+            last_bottom_state = (d_bot > 0 && d_bot <= cfg.ultrasonic_trigger_distance_cm);
+
+            vTaskDelay(pdMS_TO_TICKS(25)); // Задержка между ультразвуковыми пингами
+
+            // Опрос верхнего датчика HC-SR04 (TRIG = cfg.sensor_top_gpio, ECHO = cfg.sensor_top_echo_gpio)
+            uint16_t d_top = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_top_gpio,
+                (gpio_num_t)cfg.sensor_top_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            top_dist_cm = d_top;
+            last_top_state = (d_top > 0 && d_top <= cfg.ultrasonic_trigger_distance_cm);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 esp_err_t sensors_init(const staircase_settings_t *settings)
 {
     cfg = *settings;
 
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = cfg.sensor_active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
-        .pull_down_en = cfg.sensor_active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
+    if (cfg.sensor_type == 1) {
+        // Конфигурация для HC-SR04:
+        // TRIG пины как ВЫХОДЫ
+        gpio_config_t trig_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&trig_conf));
+        gpio_set_level((gpio_num_t)cfg.sensor_bottom_gpio, 0);
+        gpio_set_level((gpio_num_t)cfg.sensor_top_gpio, 0);
 
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_LOGI(TAG, "Sensors initialized: Bottom GPIO %d, Top GPIO %d (Active: %s, Debounce: %d ms)",
-             cfg.sensor_bottom_gpio, cfg.sensor_top_gpio,
-             cfg.sensor_active_high ? "HIGH" : "LOW",
-             cfg.sensor_debounce_ms);
+        // ECHO пины как ВХОДЫ с подтяжкой к земле
+        gpio_config_t echo_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_echo_gpio) | (1ULL << cfg.sensor_top_echo_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_ENABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&echo_conf));
+
+        xTaskCreate(ultrasonic_task, "ultrasonic_task", 3072, NULL, 4, NULL);
+
+        ESP_LOGI(TAG, "HC-SR04 Sensors initialized: Bottom TRIG=%d/ECHO=%d, Top TRIG=%d/ECHO=%d, Trigger=%d cm",
+                 cfg.sensor_bottom_gpio, cfg.sensor_bottom_echo_gpio,
+                 cfg.sensor_top_gpio, cfg.sensor_top_echo_gpio,
+                 cfg.ultrasonic_trigger_distance_cm);
+    } else {
+        // Конфигурация для цифровых PIR / оптических датчиков
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = cfg.sensor_active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
+            .pull_down_en = cfg.sensor_active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        ESP_LOGI(TAG, "PIR/Optical Sensors initialized: Bottom GPIO %d, Top GPIO %d (Active: %s, Debounce: %d ms)",
+                 cfg.sensor_bottom_gpio, cfg.sensor_top_gpio,
+                 cfg.sensor_active_high ? "HIGH" : "LOW",
+                 cfg.sensor_debounce_ms);
+    }
+
     return ESP_OK;
 }
 
@@ -1220,8 +1376,27 @@ int sensor_top_level(void)
     return gpio_get_level((gpio_num_t)cfg.sensor_top_gpio);
 }
 
+uint16_t sensor_bottom_distance_cm(void)
+{
+    return bottom_dist_cm;
+}
+
+uint16_t sensor_top_distance_cm(void)
+{
+    return top_dist_cm;
+}
+
+bool sensor_is_ultrasonic(void)
+{
+    return (cfg.sensor_type == 1);
+}
+
 bool sensor_bottom_active(void)
 {
+    if (cfg.sensor_type == 1) {
+        return last_bottom_state;
+    }
+
     int level = sensor_bottom_level();
     bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
     int64_t now_us = esp_timer_get_time();
@@ -1237,6 +1412,10 @@ bool sensor_bottom_active(void)
 
 bool sensor_top_active(void)
 {
+    if (cfg.sensor_type == 1) {
+        return last_top_state;
+    }
+
     int level = sensor_top_level();
     bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
     int64_t now_us = esp_timer_get_time();
@@ -1281,6 +1460,25 @@ typedef struct {
     char wifi_ssid[32];
     char wifi_password[64];
     char hostname[32];
+    // Датчики: 0 = Цифровой PIR / Оптический, 1 = Ультразвуковой HC-SR04
+    uint8_t sensor_type;
+    uint8_t sensor_bottom_echo_gpio;
+    uint8_t sensor_top_echo_gpio;
+    uint16_t ultrasonic_trigger_distance_cm;
+    uint16_t ultrasonic_max_distance_cm;
+    // Время NTP и Астротаймер
+    bool ntp_enabled;
+    char ntp_server[64];
+    int8_t timezone_offset;
+    float latitude;
+    float longitude;
+    uint8_t schedule_mode;
+    int16_t sunset_offset_min;
+    int16_t sunrise_offset_min;
+    uint8_t fixed_on_hour;
+    uint8_t fixed_on_minute;
+    uint8_t fixed_off_hour;
+    uint8_t fixed_off_minute;
 } staircase_settings_t;
 
 void settings_init(staircase_settings_t *settings);
@@ -1315,14 +1513,35 @@ void settings_init(staircase_settings_t *settings)
     settings->color_g = 220;
     settings->color_b = 180;
     settings->led_gpio = 4;
-    settings->sensor_bottom_gpio = 18;
-    settings->sensor_top_gpio = 19;
+    settings->sensor_bottom_gpio = 23;
+    settings->sensor_top_gpio = 22;
     settings->sensor_active_high = true;
     settings->sensor_debounce_ms = 50;
     settings->night_mode = false;
     strncpy(settings->wifi_ssid, "ESP-Lestn", sizeof(settings->wifi_ssid));
     settings->wifi_password[0] = '\0';
     strncpy(settings->hostname, "esp-lestn", sizeof(settings->hostname));
+
+    // Настройки датчиков HC-SR04
+    settings->sensor_type = 0; // 0 = PIR / Оптика, 1 = HC-SR04
+    settings->sensor_bottom_echo_gpio = 18;
+    settings->sensor_top_echo_gpio = 19;
+    settings->ultrasonic_trigger_distance_cm = 80;
+    settings->ultrasonic_max_distance_cm = 200;
+
+    // Астрономическое время
+    settings->ntp_enabled = true;
+    strncpy(settings->ntp_server, "pool.ntp.org", sizeof(settings->ntp_server));
+    settings->timezone_offset = 3;
+    settings->latitude = 55.7558f;
+    settings->longitude = 37.6173f;
+    settings->schedule_mode = 0;
+    settings->sunset_offset_min = 0;
+    settings->sunrise_offset_min = 0;
+    settings->fixed_on_hour = 22;
+    settings->fixed_on_minute = 0;
+    settings->fixed_off_hour = 7;
+    settings->fixed_off_minute = 0;
 }
 
 esp_err_t settings_load(staircase_settings_t *settings)
@@ -1709,6 +1928,190 @@ static void astro_task(void *arg)
 }`
   },
   {
+    name: 'web_ota.h',
+    path: 'main/web_ota.h',
+    category: 'web',
+    description: 'Интерфейс обновления прошивки ESP32 по воздуху (OTA по Wi-Fi через HTTP POST).',
+    code: `#ifndef WEB_OTA_H
+#define WEB_OTA_H
+
+#include "web_common.h"
+#include "esp_ota_ops.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Обработчик POST запроса для прошивки бинарного файла (.bin) по воздуху (OTA) */
+esp_err_t ota_post_handler(httpd_req_t *req);
+
+/* Обработчик GET запроса для получения информации о текущих разделах OTA и версии */
+esp_err_t ota_status_handler(httpd_req_t *req);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // WEB_OTA_H`
+  },
+  {
+    name: 'web_ota.c',
+    path: 'main/web_ota.c',
+    category: 'web',
+    description: 'Драйвер OTA прошивки: прием .bin через веб-сервер, запись во второй OTA слот и перезагрузка.',
+    code: `#include "web_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+
+static const char *TAG = "WEB_OTA";
+
+#define OTA_BUFF_SIZE 1024
+
+esp_err_t ota_status_handler(httpd_req_t *req)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+    esp_app_desc_t running_app_info;
+    if (esp_ota_get_partition_description(running, &running_app_info) != ESP_OK) {
+        strncpy(running_app_info.version, "2.0.0", sizeof(running_app_info.version));
+        strncpy(running_app_info.project_name, "ESP_lestn_v2", sizeof(running_app_info.project_name));
+    }
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{"
+        "\\"project_name\\":\\"%s\\","
+        "\\"version\\":\\"%s\\","
+        "\\"running_partition\\":\\"%s\\","
+        "\\"running_address\\":\\"0x%lx\\","
+        "\\"boot_partition\\":\\"%s\\","
+        "\\"next_update_partition\\":\\"%s\\","
+        "\\"free_heap\\":%lu"
+        "}",
+        running_app_info.project_name,
+        running_app_info.version,
+        running ? running->label : "unknown",
+        running ? (unsigned long)running->address : 0,
+        configured ? configured->label : "unknown",
+        update ? update->label : "unknown",
+        (unsigned long)esp_get_free_heap_size()
+    );
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t ota_post_handler(httpd_req_t *req)
+{
+    esp_ota_handle_t update_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+
+    ESP_LOGI(TAG, "Starting Over-The-Air (OTA) firmware update...");
+
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "Passive OTA partition not found");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA partition not found");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%lx (label: %s)",
+             update_partition->subtype, (unsigned long)update_partition->address, update_partition->label);
+
+    int total_len = req->content_len;
+    if (total_len <= 0) {
+        ESP_LOGE(TAG, "Content-Length not specified or invalid");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length header required");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_begin failed");
+        return ESP_FAIL;
+    }
+
+    char *ota_write_data = (char *)malloc(OTA_BUFF_SIZE);
+    if (!ota_write_data) {
+        ESP_LOGE(TAG, "Failed to allocate OTA buffer");
+        esp_ota_abort(update_handle);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    int remaining = total_len;
+    bool is_first_chunk = true;
+
+    while (remaining > 0) {
+        int to_read = remaining > OTA_BUFF_SIZE ? OTA_BUFF_SIZE : remaining;
+        int received = httpd_req_recv(req, ota_write_data, to_read);
+        if (received <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            ESP_LOGE(TAG, "File receive error: %d", received);
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA transfer interrupted");
+            return ESP_FAIL;
+        }
+
+        if (is_first_chunk) {
+            is_first_chunk = false;
+            if ((uint8_t)ota_write_data[0] != 0xE9) {
+                ESP_LOGE(TAG, "Invalid image magic byte: 0x%02X (expected 0xE9)", (uint8_t)ota_write_data[0]);
+                free(ota_write_data);
+                esp_ota_abort(update_handle);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid firmware binary header");
+                return ESP_FAIL;
+            }
+        }
+
+        err = esp_ota_write(update_handle, (const void *)ota_write_data, received);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed (%s)", esp_err_to_name(err));
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
+            return ESP_FAIL;
+        }
+
+        remaining -= received;
+    }
+
+    free(ota_write_data);
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware validation failed");
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to switch boot partition");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA upgrade successful! Next boot partition: %s. Scheduling reboot...", update_partition->label);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    const char *resp = "{\\"status\\":\\"success\\",\\"message\\":\\"Firmware successfully flashed. Rebooting ESP32...\\"}";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+    web_schedule_restart(1500);
+
+    return ESP_OK;
+}`
+  },
+  {
     name: 'CMakeLists.txt',
     path: 'main/CMakeLists.txt',
     category: 'config',
@@ -1727,6 +2130,7 @@ static void astro_task(void *arg)
         "web_page_settings.c"
         "web_page_wifi.c"
         "web_api.c"
+        "web_ota.c"
         "web_server.c"
 
     INCLUDE_DIRS
@@ -1734,5 +2138,74 @@ static void astro_task(void *arg)
 )
 
 target_compile_options(\${COMPONENT_LIB} PRIVATE -Wno-format-truncation -Wno-format)`
+  },
+  {
+    name: 'build-firmware.yml',
+    path: '.github/workflows/build-firmware.yml',
+    category: 'config',
+    description: 'GitHub Actions CI/CD: автоматическая сборка прошивки в облаке через официальный контейнер espressif/idf:release-v5.3 с публикацией .bin артефактов.',
+    code: `name: Сборка прошивки ESP32 (ESP-IDF v5)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Целевой чип ESP32'
+        required: true
+        default: 'esp32'
+        type: choice
+        options:
+          - esp32
+          - esp32s3
+          - esp32c3
+
+jobs:
+  build:
+    name: Компиляция прошивки ESP_lestn_v2
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v5.3
+
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Подготовка среды сборки
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target \${{ github.event.inputs.target || 'esp32' }}
+
+      - name: Сборка прошивки
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Создание единого файла прошивки (firmware_merged.bin для 0x0)
+        working-directory: ESP_lestn_v2
+        run: |
+          . $IDF_PATH/export.sh
+          esptool.py --chip \${{ github.event.inputs.target || 'esp32' }} merge_bin \\
+            -o build/firmware_merged.bin \\
+            --fill-flash-size 4MB \\
+            @build/flash_args || true
+
+      - name: Публикация артефактов прошивки (.bin)
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-firmware-binaries
+          path: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/flasher_args.json
+          retention-days: 30`
   }
 ];

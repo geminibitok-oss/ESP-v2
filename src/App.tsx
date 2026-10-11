@@ -5,6 +5,7 @@ import { DeviceWebInterface } from './components/DeviceWebInterface';
 import { FirmwareExplorer } from './components/FirmwareExplorer';
 import { WiringGuide } from './components/WiringGuide';
 import { AuditReport } from './components/AuditReport';
+import { FirmwareBuildAndFlash } from './components/FirmwareBuildAndFlash';
 import { 
   Sparkles, 
   Layers, 
@@ -13,7 +14,9 @@ import {
   Cable, 
   ShieldCheck, 
   Zap, 
-  CheckCircle2 
+  CheckCircle2,
+  Flame,
+  Cpu
 } from 'lucide-react';
 
 const DEFAULT_SETTINGS: StaircaseSettings = {
@@ -54,6 +57,13 @@ const DEFAULT_SETTINGS: StaircaseSettings = {
   sensor_active_high: true,
   sensor_debounce_ms: 60,
 
+  // Sensor Type & Ultrasonic HC-SR04
+  sensor_type: 0, // 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic
+  sensor_bottom_echo_gpio: 18, // Bottom ECHO pin (TRIG uses sensor_bottom_gpio = 23)
+  sensor_top_echo_gpio: 19,    // Top ECHO pin (TRIG uses sensor_top_gpio = 22)
+  ultrasonic_trigger_distance_cm: 80, // Срабатывать если человек ближе 80 см
+  ultrasonic_max_distance_cm: 200,
+
   // Internet Time & Astro Solar Schedule
   ntp_enabled: true,
   ntp_server: 'pool.ntp.org',
@@ -72,8 +82,8 @@ const DEFAULT_SETTINGS: StaircaseSettings = {
 export function App() {
   const [settings, setSettings] = useState<StaircaseSettings>(DEFAULT_SETTINGS);
   const [activeView, setActiveView] = useState<
-    'simulator' | 'web' | 'code' | 'wiring' | 'audit'
-  >('simulator');
+    'simulator' | 'web' | 'flash' | 'code' | 'wiring' | 'audit'
+  >('flash');
 
   const handleUpdateSettings = (newSettings: Partial<StaircaseSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
@@ -120,6 +130,22 @@ export function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800">
+          <button
+            id="tab-flash"
+            onClick={() => setActiveView('flash')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeView === 'flash'
+                ? 'bg-gradient-to-r from-sky-600 via-indigo-600 to-purple-600 text-white shadow-lg shadow-sky-900/40 ring-1 ring-sky-400/40'
+                : 'bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-800'
+            }`}
+          >
+            <Flame className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span>Сборка и прошивка ESP32</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono">
+              CI/CD & OTA
+            </span>
+          </button>
+
           <button
             id="tab-simulator"
             onClick={() => setActiveView('simulator')}
@@ -182,11 +208,15 @@ export function App() {
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Отчет об аудите (6 исправлений)</span>
+            <span>Отчет об аудите (7 исправлений)</span>
           </button>
         </div>
 
         {/* View Switcher */}
+        {activeView === 'flash' && (
+          <FirmwareBuildAndFlash settings={settings} />
+        )}
+
         {activeView === 'simulator' && (
           <StaircaseVisualizer
             settings={settings}

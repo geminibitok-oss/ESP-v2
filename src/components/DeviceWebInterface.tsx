@@ -11,7 +11,9 @@ import {
   Compass, 
   Calendar,
   Sparkles,
-  MapPin
+  MapPin,
+  Upload,
+  RotateCw
 } from 'lucide-react';
 
 interface DeviceWebInterfaceProps {
@@ -23,10 +25,18 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
   settings,
   onUpdateSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'control' | 'settings' | 'wifi'>('control');
+  const [activeTab, setActiveTab] = useState<'control' | 'settings' | 'wifi' | 'ota'>('control');
   const [formState, setFormState] = useState<StaircaseSettings>(settings);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // OTA state in Device Web Interface
+  const [otaFile, setOtaFile] = useState<File | null>(null);
+  const [otaUploading, setOtaUploading] = useState(false);
+  const [otaProgress, setOtaProgress] = useState(0);
+  const [otaSuccess, setOtaSuccess] = useState(false);
+  const [otaRebootTimer, setOtaRebootTimer] = useState<number | null>(null);
+  const [activePartition, setActivePartition] = useState<'ota_0' | 'ota_1'>('ota_0');
 
   useEffect(() => {
     setFormState(settings);
@@ -203,6 +213,16 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
             >
               Wi-Fi Сеть
             </button>
+            <button
+              onClick={() => setActiveTab('ota')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'ota'
+                  ? 'bg-sky-600 text-white shadow-md'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              Обновление (OTA)
+            </button>
           </div>
 
           {/* Toast Notification */}
@@ -255,15 +275,39 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
 
               {/* Hardware Sensors State */}
               <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-5 shadow-lg">
-                <h2 className="text-base font-semibold text-slate-200 mb-3">Состояние лестницы</h2>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-semibold text-slate-200">Сенсоры движения и присутствия</h2>
+                  <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
+                    formState.sensor_type === 1 
+                      ? 'bg-sky-950 text-sky-300 border border-sky-800'
+                      : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  }`}>
+                    {formState.sensor_type === 1 ? '📡 Ультразвуковые HC-SR04' : '👁️ Цифровые PIR / Оптика'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
-                    <div className="text-xs text-slate-400">Нижний датчик (GPIO {settings.sensor_bottom_gpio})</div>
-                    <div className="text-sm font-semibold text-emerald-400 mt-1">ГОТОВ / ОЖИДАНИЕ</div>
+                    <div className="text-xs text-slate-400">
+                      Нижний датчик {formState.sensor_type === 1 ? `(TRIG: ${settings.sensor_bottom_gpio}, ECHO: ${settings.sensor_bottom_echo_gpio ?? 18})` : `(GPIO ${settings.sensor_bottom_gpio})`}
+                    </div>
+                    <div className="text-sm font-semibold text-emerald-400 mt-1 flex items-center justify-between">
+                      <span>ГОТОВ / ОЖИДАНИЕ</span>
+                      {formState.sensor_type === 1 && (
+                        <span className="text-xs font-mono text-sky-400">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
+                      )}
+                    </div>
                   </div>
                   <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
-                    <div className="text-xs text-slate-400">Верхний датчик (GPIO {settings.sensor_top_gpio})</div>
-                    <div className="text-sm font-semibold text-emerald-400 mt-1">ГОТОВ / ОЖИДАНИЕ</div>
+                    <div className="text-xs text-slate-400">
+                      Верхний датчик {formState.sensor_type === 1 ? `(TRIG: ${settings.sensor_top_gpio}, ECHO: ${settings.sensor_top_echo_gpio ?? 19})` : `(GPIO ${settings.sensor_top_gpio})`}
+                    </div>
+                    <div className="text-sm font-semibold text-emerald-400 mt-1 flex items-center justify-between">
+                      <span>ГОТОВ / ОЖИДАНИЕ</span>
+                      {formState.sensor_type === 1 && (
+                        <span className="text-xs font-mono text-sky-400">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -589,34 +633,131 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">GPIO ленты WS2812</label>
-                    <input
-                      type="number"
-                      value={formState.led_gpio}
-                      onChange={(e) => setFormState({ ...formState, led_gpio: parseInt(e.target.value) || 4 })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
-                    />
+                {/* Sensor configuration subsection */}
+                <div className="mt-4 pt-4 border-t border-slate-700/60">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-2">Настройка сенсоров присутствия</h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">Тип подключенных датчиков</label>
+                      <select
+                        value={formState.sensor_type ?? 0}
+                        onChange={(e) => setFormState({ ...formState, sensor_type: parseInt(e.target.value) || 0 })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                      >
+                        <option value={0}>👁️ PIR / Оптический (цифровой вход HIGH/LOW)</option>
+                        <option value={1}>📡 Ультразвуковой дальномер HC-SR04 (см)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">GPIO ленты WS2812 (DIN)</label>
+                      <input
+                        type="number"
+                        value={formState.led_gpio}
+                        onChange={(e) => setFormState({ ...formState, led_gpio: parseInt(e.target.value) || 4 })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">GPIO нижнего датчика</label>
-                    <input
-                      type="number"
-                      value={formState.sensor_bottom_gpio}
-                      onChange={(e) => setFormState({ ...formState, sensor_bottom_gpio: parseInt(e.target.value) || 23 })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">GPIO верхнего датчика</label>
-                    <input
-                      type="number"
-                      value={formState.sensor_top_gpio}
-                      onChange={(e) => setFormState({ ...formState, sensor_top_gpio: parseInt(e.target.value) || 22 })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
-                    />
-                  </div>
+
+                  {formState.sensor_type === 1 ? (
+                    <div className="p-3 bg-sky-950/30 border border-sky-800/40 rounded-xl space-y-3 mb-4">
+                      <div className="text-xs font-semibold text-sky-300">
+                        Параметры ультразвуковых датчиков HC-SR04:
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Нижний: GPIO TRIG (Запуск)</label>
+                          <input
+                            type="number"
+                            value={formState.sensor_bottom_gpio}
+                            onChange={(e) => setFormState({ ...formState, sensor_bottom_gpio: parseInt(e.target.value) || 23 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Нижний: GPIO ECHO (Отклик)</label>
+                          <input
+                            type="number"
+                            value={formState.sensor_bottom_echo_gpio ?? 18}
+                            onChange={(e) => setFormState({ ...formState, sensor_bottom_echo_gpio: parseInt(e.target.value) || 18 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Верхний: GPIO TRIG (Запуск)</label>
+                          <input
+                            type="number"
+                            value={formState.sensor_top_gpio}
+                            onChange={(e) => setFormState({ ...formState, sensor_top_gpio: parseInt(e.target.value) || 22 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Верхний: GPIO ECHO (Отклик)</label>
+                          <input
+                            type="number"
+                            value={formState.sensor_top_echo_gpio ?? 19}
+                            onChange={(e) => setFormState({ ...formState, sensor_top_echo_gpio: parseInt(e.target.value) || 19 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-sky-900/40">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Порог срабатывания (см)</label>
+                          <input
+                            type="number"
+                            min="10"
+                            max="300"
+                            value={formState.ultrasonic_trigger_distance_cm ?? 80}
+                            onChange={(e) => setFormState({ ...formState, ultrasonic_trigger_distance_cm: parseInt(e.target.value) || 80 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                          <span className="text-[10px] text-slate-500">Включать подсветку, если подошли ближе этого расстояния</span>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Максимальная дистанция (см)</label>
+                          <input
+                            type="number"
+                            min="50"
+                            max="400"
+                            value={formState.ultrasonic_max_distance_cm ?? 200}
+                            onChange={(e) => setFormState({ ...formState, ultrasonic_max_distance_cm: parseInt(e.target.value) || 200 })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                          />
+                          <span className="text-[10px] text-slate-500">Ограничение дальности эхолокации для отсечения шума</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1">GPIO нижнего PIR датчика</label>
+                        <input
+                          type="number"
+                          value={formState.sensor_bottom_gpio}
+                          onChange={(e) => setFormState({ ...formState, sensor_bottom_gpio: parseInt(e.target.value) || 23 })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1">GPIO верхнего PIR датчика</label>
+                        <input
+                          type="number"
+                          value={formState.sensor_top_gpio}
+                          onChange={(e) => setFormState({ ...formState, sensor_top_gpio: parseInt(e.target.value) || 22 })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -681,6 +822,166 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                 <Wifi className="w-4 h-4" />
                 <span>💾 Сохранить Wi-Fi и перезагрузить</span>
               </button>
+            </div>
+          )}
+
+          {/* Tab 4: OTA Firmware Update */}
+          {activeTab === 'ota' && (
+            <div className="space-y-6">
+              {/* Flash Partition State Card */}
+              <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-5 shadow-lg">
+                <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center justify-between">
+                  <span>Схема Flash разделов ESP32 (Dual OTA)</span>
+                  <span className="text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full">
+                    Версия: v2.0.0
+                  </span>
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
+                  <div className={`p-3 rounded-lg border ${
+                    activePartition === 'ota_0'
+                      ? 'bg-emerald-950/40 border-emerald-700 text-emerald-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                  }`}>
+                    <div className="font-semibold flex items-center justify-between mb-1">
+                      <span>Слот 1: ota_0 (0x20000)</span>
+                      {activePartition === 'ota_0' && <span className="text-[10px] bg-emerald-800 px-1.5 py-0.2 rounded text-white font-mono">АКТИВЕН</span>}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Размер: 1920 KB • Текущая работающая прошивка
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-lg border ${
+                    activePartition === 'ota_1'
+                      ? 'bg-emerald-950/40 border-emerald-700 text-emerald-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                  }`}>
+                    <div className="font-semibold flex items-center justify-between mb-1">
+                      <span>Слот 2: ota_1 (0x200000)</span>
+                      {activePartition === 'ota_1' ? (
+                        <span className="text-[10px] bg-emerald-800 px-1.5 py-0.2 rounded text-white font-mono">АКТИВЕН</span>
+                      ) : (
+                        <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-1.5 py-0.2 rounded font-mono">ЦЕЛЬ ДЛЯ OTA</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Размер: 1920 KB • Пассивный слот для новой прошивки
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  При обновлении прошивки файл записывается в неактивный раздел. Если контроллер успешно стартует с новой версии, раздел помечается как постоянный. В случае сбоя ESP-IDF автоматически откатывается на предыдущий рабочий раздел!
+                </div>
+              </div>
+
+              {/* Upload Firmware Card */}
+              <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-5 shadow-lg space-y-4">
+                <h2 className="text-sm font-semibold text-slate-200">
+                  Загрузка бинарного файла (.bin)
+                </h2>
+
+                <div className="border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-xl p-6 text-center transition-colors">
+                  <input
+                    type="file"
+                    accept=".bin"
+                    id="esp-ota-file-input"
+                    className="hidden"
+                    onChange={(e) => setOtaFile(e.target.files?.[0] || null)}
+                  />
+                  <label htmlFor="esp-ota-file-input" className="cursor-pointer block space-y-2">
+                    <div className="w-10 h-10 mx-auto rounded-full bg-sky-950/70 text-sky-400 border border-sky-800 flex items-center justify-center">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs font-semibold text-slate-200">
+                      {otaFile ? otaFile.name : 'Нажмите для выбора бинарника прошивки (.bin)'}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {otaFile
+                        ? `${(otaFile.size / 1024).toFixed(1)} KB • Готов к прошивке`
+                        : 'Поддерживаются файлы компиляции ESP-IDF (ESP_lestn_v2.bin)'}
+                    </div>
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={otaUploading}
+                  onClick={() => {
+                    setOtaUploading(true);
+                    setOtaProgress(0);
+                    setOtaSuccess(false);
+
+                    let p = 0;
+                    const interval = setInterval(() => {
+                      p += 20;
+                      if (p <= 100) {
+                        setOtaProgress(p);
+                      } else {
+                        clearInterval(interval);
+                        setOtaUploading(false);
+                        setOtaSuccess(true);
+                        setOtaFile(null);
+
+                        // Start simulated restart
+                        let countdown = 6;
+                        setOtaRebootTimer(countdown);
+                        const restartTimer = setInterval(() => {
+                          countdown--;
+                          if (countdown <= 0) {
+                            clearInterval(restartTimer);
+                            setOtaRebootTimer(null);
+                            setActivePartition((prev) => (prev === 'ota_0' ? 'ota_1' : 'ota_0'));
+                            setSaveToast('ESP32 успешно перезагружен в новый OTA раздел!');
+                          } else {
+                            setOtaRebootTimer(countdown);
+                          }
+                        }, 1000);
+                      }
+                    }, 400);
+                  }}
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>
+                    {otaUploading ? 'Запись во Flash память...' : 'Прошить ESP32 по воздуху (POST /api/ota)'}
+                  </span>
+                </button>
+
+                {otaUploading && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
+                      <span>Передача прошивки в ESP32...</span>
+                      <span className="text-sky-400 font-bold">{otaProgress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
+                      <div
+                        className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-300"
+                        style={{ width: `${otaProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {otaRebootTimer !== null && (
+                  <div className="p-3 bg-emerald-950/80 border border-emerald-700 text-emerald-300 rounded-xl text-xs flex items-center gap-2 animate-pulse">
+                    <RotateCw className="w-4 h-4 animate-spin" />
+                    <span>
+                      Прошивка записана! ESP32 перезагружается... Ожидание: <strong>{otaRebootTimer} сек</strong>
+                    </span>
+                  </div>
+                )}
+
+                {otaSuccess && otaRebootTimer === null && (
+                  <div className="p-3 bg-emerald-950/60 border border-emerald-700 text-emerald-300 rounded-xl text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>
+                      Обновление завершено! Контроллер успешно работает на обновленной прошивке.
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

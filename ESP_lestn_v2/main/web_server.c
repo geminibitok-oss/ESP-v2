@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "web_routes.h"
 #include "web_common.h"
+#include "web_ota.h"
 
 static const char *TAG = "WEB_SERVER";
 static httpd_handle_t server = NULL;
@@ -19,8 +20,8 @@ esp_err_t web_server_start(staircase_settings_t *settings)
     web_api_set_settings(settings);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 16;
-    config.stack_size = 8192;
+    config.max_uri_handlers = 20;
+    config.stack_size = 10240;
     config.lru_purge_enable = true;
     config.max_resp_headers = 16;
 
@@ -40,6 +41,11 @@ esp_err_t web_server_start(staircase_settings_t *settings)
     httpd_uri_t uri_api_state = { .uri = "/api/state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
     httpd_uri_t uri_api_trigger = { .uri = "/api/trigger", .method = HTTP_GET, .handler = api_trigger_handler, .user_ctx = NULL };
 
+    /* OTA Обновление прошивки */
+    httpd_uri_t uri_ota_post = { .uri = "/api/ota", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_post_update = { .uri = "/update", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_status = { .uri = "/api/ota/status", .method = HTTP_GET, .handler = ota_status_handler, .user_ctx = NULL };
+
     /* Для совместимости */
     httpd_uri_t uri_led_state = { .uri = "/led-state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
 
@@ -50,8 +56,11 @@ esp_err_t web_server_start(staircase_settings_t *settings)
     httpd_register_uri_handler(server, &uri_wifi_post);
     httpd_register_uri_handler(server, &uri_api_state);
     httpd_register_uri_handler(server, &uri_api_trigger);
+    httpd_register_uri_handler(server, &uri_ota_post);
+    httpd_register_uri_handler(server, &uri_ota_post_update);
+    httpd_register_uri_handler(server, &uri_ota_status);
     httpd_register_uri_handler(server, &uri_led_state);
 
-    ESP_LOGI(TAG, "Web server started with endpoints: /, /settings, /wifi, /api/state, /api/trigger");
+    ESP_LOGI(TAG, "Web server started with endpoints: /, /settings, /wifi, /api/state, /api/trigger, /api/ota");
     return ESP_OK;
 }

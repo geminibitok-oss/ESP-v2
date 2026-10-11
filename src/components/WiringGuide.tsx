@@ -57,28 +57,66 @@ export const WiringGuide: React.FC<WiringGuideProps> = ({ settings }) => {
               <span className="text-zinc-300 font-mono">Лента WS2812B (через 330-470 Ом)</span>
             </div>
 
-            <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-emerald-400">GPIO {settings.sensor_bottom_gpio}</span>
-                <span className="text-zinc-400 ml-2">→ Нижний датчик</span>
-              </div>
-              <span className="text-zinc-300 font-mono">PIR / Оптический (Нижняя ступень)</span>
-            </div>
+            {settings.sensor_type === 1 ? (
+              <>
+                <div className="p-3 bg-zinc-950 rounded-xl border border-sky-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-sky-400">GPIO {settings.sensor_bottom_gpio}</span>
+                    <span className="text-zinc-400 ml-2">→ Нижний TRIG</span>
+                  </div>
+                  <span className="text-zinc-300 font-mono">HC-SR04 #1 TRIG (Запуск 10 мкс)</span>
+                </div>
 
-            <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-emerald-400">GPIO {settings.sensor_top_gpio}</span>
-                <span className="text-zinc-400 ml-2">→ Верхний датчик</span>
-              </div>
-              <span className="text-zinc-300 font-mono">PIR / Оптический (Верхняя ступень)</span>
-            </div>
+                <div className="p-3 bg-zinc-950 rounded-xl border border-sky-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-sky-300">GPIO {settings.sensor_bottom_echo_gpio ?? 18}</span>
+                    <span className="text-zinc-400 ml-2">→ Нижний ECHO</span>
+                  </div>
+                  <span className="text-amber-400 font-mono">HC-SR04 #1 ECHO (через делитель 5V→3.3V)</span>
+                </div>
+
+                <div className="p-3 bg-zinc-950 rounded-xl border border-sky-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-emerald-400">GPIO {settings.sensor_top_gpio}</span>
+                    <span className="text-zinc-400 ml-2">→ Верхний TRIG</span>
+                  </div>
+                  <span className="text-zinc-300 font-mono">HC-SR04 #2 TRIG (Запуск 10 мкс)</span>
+                </div>
+
+                <div className="p-3 bg-zinc-950 rounded-xl border border-sky-800/40 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-emerald-300">GPIO {settings.sensor_top_echo_gpio ?? 19}</span>
+                    <span className="text-zinc-400 ml-2">→ Верхний ECHO</span>
+                  </div>
+                  <span className="text-amber-400 font-mono">HC-SR04 #2 ECHO (через делитель 5V→3.3V)</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-emerald-400">GPIO {settings.sensor_bottom_gpio}</span>
+                    <span className="text-zinc-400 ml-2">→ Нижний датчик</span>
+                  </div>
+                  <span className="text-zinc-300 font-mono">PIR / Оптический (Нижняя ступень)</span>
+                </div>
+
+                <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-emerald-400">GPIO {settings.sensor_top_gpio}</span>
+                    <span className="text-zinc-400 ml-2">→ Верхний датчик</span>
+                  </div>
+                  <span className="text-zinc-300 font-mono">PIR / Оптический (Верхняя ступень)</span>
+                </div>
+              </>
+            )}
 
             <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
               <div>
                 <span className="font-semibold text-zinc-300">GND</span>
                 <span className="text-zinc-400 ml-2">→ Общая земля</span>
               </div>
-              <span className="text-amber-400 font-mono">ОБЩИЙ GND (ESP32 + БП + Лента)</span>
+              <span className="text-amber-400 font-mono">ОБЩИЙ GND (ESP32 + БП + Датчики + Лента)</span>
             </div>
           </div>
         </div>
@@ -126,7 +164,7 @@ export const WiringGuide: React.FC<WiringGuideProps> = ({ settings }) => {
           Важные аппаратные правила надежности
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-zinc-300">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-zinc-300">
           <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800">
             <div className="font-semibold text-sky-400 mb-1">1. Конденсатор по питанию</div>
             <div>Электролит 1000 мкФ x 10V прямо на вход питания ленты сглаживает скачки тока.</div>
@@ -140,6 +178,11 @@ export const WiringGuide: React.FC<WiringGuideProps> = ({ settings }) => {
           <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800">
             <div className="font-semibold text-emerald-400 mb-1">3. Преобразователь 3.3V → 5V</div>
             <div>При длине провода от ESP32 до ленты более 50 см используйте конвертер уровней 74AHCT125 / TXS0108.</div>
+          </div>
+
+          <div className="p-3 bg-zinc-950 rounded-xl border border-sky-800/40">
+            <div className="font-semibold text-cyan-400 mb-1">4. Защита пина ECHO (HC-SR04)</div>
+            <div>HC-SR04 питается от 5V и выдает 5V на выходе ECHO. Для защиты пина ESP32 (3.3V) используйте резистивный делитель: 1 кОм + 2 кОм на GND.</div>
           </div>
         </div>
       </div>

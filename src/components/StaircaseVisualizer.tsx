@@ -302,9 +302,13 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <Footprints className="w-4 h-4" />
-              <span>Шаг снизу (PIR)</span>
+              <span>{settings.sensor_type === 1 ? 'Подход снизу (HC-SR04)' : 'Шаг снизу (PIR)'}</span>
             </div>
-            <span className="text-[10px] text-emerald-400/80">Датчик GPIO {settings.sensor_bottom_gpio}</span>
+            <span className="text-[10px] text-emerald-400/80">
+              {settings.sensor_type === 1 
+                ? `TRIG ${settings.sensor_bottom_gpio} / ECHO ${settings.sensor_bottom_echo_gpio ?? 18}`
+                : `Датчик GPIO ${settings.sensor_bottom_gpio}`}
+            </span>
           </button>
 
           <button
@@ -318,9 +322,13 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <Footprints className="w-4 h-4 rotate-180" />
-              <span>Шаг сверху (PIR)</span>
+              <span>{settings.sensor_type === 1 ? 'Подход сверху (HC-SR04)' : 'Шаг сверху (PIR)'}</span>
             </div>
-            <span className="text-[10px] text-emerald-400/80">Датчик GPIO {settings.sensor_top_gpio}</span>
+            <span className="text-[10px] text-emerald-400/80">
+              {settings.sensor_type === 1 
+                ? `TRIG ${settings.sensor_top_gpio} / ECHO ${settings.sensor_top_echo_gpio ?? 19}`
+                : `Датчик GPIO ${settings.sensor_top_gpio}`}
+            </span>
           </button>
 
           <button
@@ -575,7 +583,12 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
                 : 'bg-zinc-900/80 border-zinc-800 text-zinc-400'
             }`}>
               <Radio className={`w-4 h-4 ${topSensorActive ? 'text-emerald-400 animate-spin' : 'text-zinc-500'}`} />
-              <span>Верхний PIR (GPIO {settings.sensor_top_gpio}): <strong>{topSensorActive ? 'ДВИЖЕНИЕ!' : 'АКТИВЕН'}</strong></span>
+              <span>
+                {settings.sensor_type === 1 
+                  ? `Верхний HC-SR04 (TRIG: ${settings.sensor_top_gpio}, ECHO: ${settings.sensor_top_echo_gpio ?? 19}): `
+                  : `Верхний PIR (GPIO ${settings.sensor_top_gpio}): `}
+                <strong>{topSensorActive ? 'ОБНАРУЖЕНО!' : 'ОЖИДАНИЕ'}</strong>
+              </span>
             </div>
           </div>
           <span className="text-xs text-zinc-500 font-mono">Верхний этаж (2F)</span>
@@ -669,7 +682,12 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
                 : 'bg-zinc-900/80 border-zinc-800 text-zinc-400'
             }`}>
               <Radio className={`w-4 h-4 ${bottomSensorActive ? 'text-emerald-400 animate-spin' : 'text-zinc-500'}`} />
-              <span>Нижний PIR (GPIO {settings.sensor_bottom_gpio}): <strong>{bottomSensorActive ? 'ДВИЖЕНИЕ!' : 'АКТИВЕН'}</strong></span>
+              <span>
+                {settings.sensor_type === 1 
+                  ? `Нижний HC-SR04 (TRIG: ${settings.sensor_bottom_gpio}, ECHO: ${settings.sensor_bottom_echo_gpio ?? 18}): `
+                  : `Нижний PIR (GPIO ${settings.sensor_bottom_gpio}): `}
+                <strong>{bottomSensorActive ? 'ОБНАРУЖЕНО!' : 'ОЖИДАНИЕ'}</strong>
+              </span>
             </div>
           </div>
           <span className="text-xs text-zinc-500 font-mono">Нижний этаж (1F)</span>

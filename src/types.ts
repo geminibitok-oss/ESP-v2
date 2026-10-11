@@ -45,6 +45,14 @@ export interface StaircaseSettings {
   sensor_active_high: boolean;
   sensor_debounce_ms: number;
 
+  // Sensor Type & Ultrasonic HC-SR04 Configuration
+  // 0: PIR / Optical (Digital GPIO), 1: Ultrasonic HC-SR04
+  sensor_type: number;
+  sensor_bottom_echo_gpio?: number;
+  sensor_top_echo_gpio?: number;
+  ultrasonic_trigger_distance_cm?: number; // Порог срабатывания, например 100 см
+  ultrasonic_max_distance_cm?: number;     // Максимальная дистанция измерения (обычно 200-400 см)
+
   // Internet Time & Astronomical Solar Schedule
   ntp_enabled: boolean;
   ntp_server: string;
