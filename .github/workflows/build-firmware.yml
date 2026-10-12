@@ -142,12 +142,6 @@ jobs:
             ESP_lestn_v2/build/bootloader/bootloader.bin
             ESP_lestn_v2/build/partition_table/partition-table.bin
             ESP_lestn_v2/build/flasher_args.json
-          files: |
-            ESP_lestn_v2/build/ESP_lestn_v2.bin
-            ESP_lestn_v2/build/firmware_merged.bin
-            ESP_lestn_v2/build/bootloader/bootloader.bin
-            ESP_lestn_v2/build/partition_table/partition-table.bin
-            ESP_lestn_v2/build/flasher_args.json
           body: |
             ## Свежая автоматическая сборка прошивки ESP32
             Собрано компилятором ESP-IDF v5.3 из ветки `${{ github.ref_name }}` (коммит `${{ github.sha }}`).

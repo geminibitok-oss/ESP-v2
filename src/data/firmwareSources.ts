@@ -3555,9 +3555,9 @@ jobs:
         working-directory: ESP_lestn_v2
         run: |
           . $IDF_PATH/export.sh
-          esptool.py --chip \${{ github.event.inputs.target || 'esp32' }} merge_bin \\
-            -o build/firmware_merged.bin \\
-            --fill-flash-size 4MB \\
+          esptool.py --chip \${{ github.event.inputs.target || 'esp32' }} merge_bin \
+            -o build/firmware_merged.bin \
+            --fill-flash-size 4MB \
             @build/flash_args || true
 
       - name: Публикация артефактов прошивки (Actions Artifacts)
@@ -3571,24 +3571,29 @@ jobs:
             ESP_lestn_v2/build/firmware_merged.bin
             ESP_lestn_v2/build/flasher_args.json
           retention-days: 30
+          if-no-files-found: warn
 
-      - name: Автоматический релиз по тегу (v1.0.0 и т.д.)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Определение номера версии релиза
+        id: release_info
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+        run: |
+          if [[ "\${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="\${{ github.ref_name }}"
+            REL_NAME="ESP-v2 Релиз \${TAG_NAME}"
+          else
+            # Формируем уникальный версионный тег по номеру запуска Actions
+            TAG_NAME="v2.\${{ github.run_number }}.0"
+            REL_NAME="ESP-v2 Сборка \${TAG_NAME} (#\${{ github.run_number }})"
+          fi
+          echo "tag_name=\${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "rel_name=\${REL_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Создание нового нумерованного релиза (v2.X.0)
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ESP_lestn_v2/build/ESP_lestn_v2.bin
-            ESP_lestn_v2/build/firmware_merged.bin
-            ESP_lestn_v2/build/bootloader/bootloader.bin
-            ESP_lestn_v2/build/partition_table/partition-table.bin
-            ESP_lestn_v2/build/flasher_args.json
-
-      - name: Автоматический релиз в Releases (latest) при пуше в main
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && !startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "ESP-v2 Свежая автосборка прошивки (Latest)"
+          tag_name: \${{ steps.release_info.outputs.tag_name }}
+          name: \${{ steps.release_info.outputs.rel_name }}
           prerelease: false
           make_latest: true
           files: |
@@ -3596,6 +3601,150 @@ jobs:
             ESP_lestn_v2/build/firmware_merged.bin
             ESP_lestn_v2/build/bootloader/bootloader.bin
             ESP_lestn_v2/build/partition_table/partition-table.bin
-            ESP_lestn_v2/build/flasher_args.json`
+            ESP_lestn_v2/build/flasher_args.json
+          body: |
+            ## Релиз прошивки ESP32: \`\${{ steps.release_info.outputs.tag_name }}\`
+            Собрано компилятором ESP-IDF v5.3 (Сборка GitHub Actions #\${{ github.run_number }}, коммит \`\${{ github.sha }}\`).
+
+            ### Файлы для скачивания:
+            - **\`ESP_lestn_v2.bin\`**: файл приложения для обновления по воздуху (Wi-Fi OTA)
+            - **\`firmware_merged.bin\`**: полный объединённый бинарник (с адреса 0x0) для быстрой прошивки через Web Serial или esptool
+            - **\`bootloader.bin\`** и **\`partition-table.bin\`**: загрузчик и таблица разделов
+
+            ---
+            ### 📌 Способы прошивки:
+            #### Вариант 1: Быстрый старт (1 файл \`firmware_merged.bin\` с адреса 0x0)
+            \`\`\`bash
+            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+            \`\`\`
+
+            #### Вариант 2: Раздельная прошивка 3 файлов
+            | Файл | Адрес Flash | Описание |
+            | :--- | :---: | :--- |
+            | \`bootloader.bin\` | **\`0x1000\`** | Загрузчик ESP-IDF |
+            | \`partition-table.bin\` | **\`0x8000\`** | Таблица разметки Dual OTA |
+            | \`ESP_lestn_v2.bin\` | **\`0x10000\`** | Приложение умной лестницы |
+
+            \`\`\`bash
+            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+            \`\`\`
+
+            #### Вариант 3: Беспроводное обновление по Wi-Fi (OTA)
+            Откройте \`http://192.168.4.1/update\` и выберите эту версию в меню GitHub Releases!
+
+      - name: Также обновляем тег 'latest' для прямой совместимости
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "ESP-v2 Свежая автосборка прошивки (Latest)"
+          prerelease: false
+          make_latest: false
+          files: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/flasher_args.json
+          body: |
+            ## Свежая автоматическая сборка прошивки ESP32
+            Собрано компилятором ESP-IDF v5.3 из ветки \`\${{ github.ref_name }}\` (коммит \`\${{ github.sha }}\`).
+
+            ### Файлы для скачивания:
+            - **\`ESP_lestn_v2.bin\`**: файл приложения для обновления по воздуху (Wi-Fi OTA)
+            - **\`firmware_merged.bin\`**: полный объединённый бинарник (с адреса 0x0) для быстрой прошивки через Web Serial или esptool
+            - **\`bootloader.bin\`** и **\`partition-table.bin\`**: загрузчик и таблица разделов
+
+            ---
+            ### 📌 Способы прошивки:
+
+            #### Вариант 1 (Быстрый старт): Один файл целиком
+            - **Файл**: \`firmware_merged.bin\`
+            - **Адрес смещения Flash**: \`0x0\`
+            - **Web Serial**: в веб-интерфейсе выберите \`firmware_merged.bin\` -> адрес \`0x0\` -> «Прошить».
+            - **CLI (терминал)**:
+              \`\`\`bash
+              esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+              \`\`\`
+
+            #### Вариант 2 (Рекомендуется при сбоях): Раздельная прошивка 3 файлов
+            Скачайте 3 файла из этого релиза и прошейте по точным адресам памяти:
+            | Файл бинарника | Адрес Flash (Смещение) | Описание |
+            | :--- | :---: | :--- |
+            | \`bootloader.bin\` | **\`0x1000\`** | Загрузчик ESP-IDF 2-го уровня |
+            | \`partition-table.bin\` | **\`0x8000\`** | Таблица разметки Dual OTA |
+            | \`ESP_lestn_v2.bin\` | **\`0x10000\`** | Приложение умной лестницы |
+
+            - **В браузере (Web Serial flasher)**: добавьте 3 файла в форму и укажите адреса:
+              1. \`bootloader.bin\` ➡️ \`0x1000\`
+              2. \`partition-table.bin\` ➡️ \`0x8000\`
+              3. \`ESP_lestn_v2.bin\` ➡️ \`0x10000\`
+            - **Через консоль (esptool.py)**:
+              \`\`\`bash
+              esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+              \`\`\`
+
+            #### Вариант 3: Беспроводное обновление по Wi-Fi (Dual-OTA)
+            - Откройте веб-интерфейс контроллера (\`http://192.168.4.1/update\` или вкладку OTA)
+            - Загрузите только **\`ESP_lestn_v2.bin\`**
+            - ESP32 запишет его в пассивный раздел \`ota_1\`, проверит контрольную сумму и перезагрузится без проводов!
+
+      - name: Ротация релизов (хранить не более 10 релизов, старые затирать)
+        if: always()
+        run: |
+          python3 - << 'PYEOF'
+          import os, json, urllib.request, urllib.error
+
+          token = os.environ.get("GITHUB_TOKEN")
+          repo = os.environ.get("GITHUB_REPOSITORY")
+          if not token or not repo:
+              print("No GITHUB_TOKEN or GITHUB_REPOSITORY set; skipping retention pruning.")
+              exit(0)
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Release-Pruner"
+          }
+
+          url = f"https://api.github.com/repos/{repo}/releases?per_page=100"
+          req = urllib.request.Request(url, headers=headers)
+          try:
+              with urllib.request.urlopen(req) as response:
+                  releases = json.loads(response.read().decode())
+          except Exception as e:
+              print(f"Failed to fetch releases: {e}")
+              exit(0)
+
+          MAX_RELEASES = 10
+          if len(releases) <= MAX_RELEASES:
+              print(f"Current releases count ({len(releases)}) <= limit ({MAX_RELEASES}). Nothing to delete.")
+              exit(0)
+
+          # Sort by published_at or created_at descending (newest first)
+          sorted_releases = sorted(
+              releases,
+              key=lambda r: r.get("published_at") or r.get("created_at") or "",
+              reverse=True
+          )
+
+          to_delete = sorted_releases[MAX_RELEASES:]
+          print(f"Total releases: {len(sorted_releases)}. Exceeds {MAX_RELEASES}. Deleting {len(to_delete)} old releases...")
+
+          for rel in to_delete:
+              rel_id = rel.get("id")
+              rel_tag = rel.get("tag_name")
+              print(f"Deleting old release #{rel_id} (tag: {rel_tag})...")
+              del_url = f"https://api.github.com/repos/{repo}/releases/{rel_id}"
+              del_req = urllib.request.Request(del_url, headers=headers, method="DELETE")
+              try:
+                  with urllib.request.urlopen(del_req) as resp:
+                      print(f"Successfully deleted release {rel_id}.")
+              except Exception as err:
+                  print(f"Error deleting release {rel_id}: {err}")
+          PYEOF
+        env:
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+`
   }
 ];
