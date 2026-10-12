@@ -69,26 +69,79 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Релиз по версионному Git-тегу (v1.0.0 и т.д.)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Определение номера версии релиза
+        id: release_info
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+            REL_NAME="ESP-v2 Релиз ${TAG_NAME}"
+          else
+            # Формируем уникальный версионный тег по номеру запуска Actions
+            TAG_NAME="v2.${{ github.run_number }}.0"
+            REL_NAME="ESP-v2 Сборка ${TAG_NAME} (#${{ github.run_number }})"
+          fi
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "rel_name=${REL_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Создание нового нумерованного релиза (v2.X.0)
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.rel_name }}
+          prerelease: false
+          make_latest: true
           files: |
             ESP_lestn_v2/build/ESP_lestn_v2.bin
             ESP_lestn_v2/build/firmware_merged.bin
             ESP_lestn_v2/build/bootloader/bootloader.bin
             ESP_lestn_v2/build/partition_table/partition-table.bin
             ESP_lestn_v2/build/flasher_args.json
-          generate_release_notes: true
+          body: |
+            ## Релиз прошивки ESP32: `${{ steps.release_info.outputs.tag_name }}`
+            Собрано компилятором ESP-IDF v5.3 (Сборка GitHub Actions #${{ github.run_number }}, коммит `${{ github.sha }}`).
 
-      - name: Автоматический релиз в Releases (latest) при пуше в main
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && !startsWith(github.ref, 'refs/tags/')
+            ### Файлы для скачивания:
+            - **`ESP_lestn_v2.bin`**: файл приложения для обновления по воздуху (Wi-Fi OTA)
+            - **`firmware_merged.bin`**: полный объединённый бинарник (с адреса 0x0) для быстрой прошивки через Web Serial или esptool
+            - **`bootloader.bin`** и **`partition-table.bin`**: загрузчик и таблица разделов
+
+            ---
+            ### 📌 Способы прошивки:
+            #### Вариант 1: Быстрый старт (1 файл `firmware_merged.bin` с адреса 0x0)
+            ```bash
+            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+            ```
+
+            #### Вариант 2: Раздельная прошивка 3 файлов
+            | Файл | Адрес Flash | Описание |
+            | :--- | :---: | :--- |
+            | `bootloader.bin` | **`0x1000`** | Загрузчик ESP-IDF |
+            | `partition-table.bin` | **`0x8000`** | Таблица разметки Dual OTA |
+            | `ESP_lestn_v2.bin` | **`0x10000`** | Приложение умной лестницы |
+
+            ```bash
+            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+            ```
+
+            #### Вариант 3: Беспроводное обновление по Wi-Fi (OTA)
+            Откройте `http://192.168.4.1/update` и выберите эту версию в меню GitHub Releases!
+
+      - name: Также обновляем тег 'latest' для прямой совместимости
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "ESP-v2 Свежая автосборка прошивки (Latest)"
           prerelease: false
-          make_latest: true
+          make_latest: false
+          files: |
+            ESP_lestn_v2/build/ESP_lestn_v2.bin
+            ESP_lestn_v2/build/firmware_merged.bin
+            ESP_lestn_v2/build/bootloader/bootloader.bin
+            ESP_lestn_v2/build/partition_table/partition-table.bin
+            ESP_lestn_v2/build/flasher_args.json
           files: |
             ESP_lestn_v2/build/ESP_lestn_v2.bin
             ESP_lestn_v2/build/firmware_merged.bin
