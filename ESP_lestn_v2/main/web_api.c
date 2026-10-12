@@ -62,6 +62,9 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
                 staircase_set_manual_on();
             } else if (strcmp(dir, "all_off") == 0) {
                 staircase_set_manual_off();
+            } else if (strcmp(dir, "reset_sensors") == 0) {
+                sensors_reset_state();
+                staircase_reset_sensors();
             } else if (strcmp(dir, "toggle") == 0) {
                 char step_str[16] = {0};
                 if (httpd_query_key_value(query, "step", step_str, sizeof(step_str)) == ESP_OK) {

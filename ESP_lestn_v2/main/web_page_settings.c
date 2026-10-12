@@ -38,6 +38,49 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='night_brightness' value='%u' min='1' max='100'></div></div>", (unsigned int)cfg->night_brightness);
     httpd_resp_sendstr_chunk(req, buf);
 
+    httpd_resp_sendstr_chunk(req,
+        "<h2>🪜 Подсветка первой и последней ступени</h2>"
+        "<div class='grid'>"
+        "<div class='form-group'><label>Первая ступень (Снизу, #1)</label><select name='en_first'>"
+    );
+    snprintf(buf, sizeof(buf),
+        "<option value='1' %s>Включена в основных анимациях</option>"
+        "<option value='0' %s>Отключена (полностью выключена)</option></select></div>",
+        cfg->enable_first_step ? "selected" : "",
+        !cfg->enable_first_step ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Последняя ступень (Сверху, #N)</label><select name='en_last'>");
+    snprintf(buf, sizeof(buf),
+        "<option value='1' %s>Включена в основных анимациях</option>"
+        "<option value='0' %s>Отключена (полностью выключена)</option></select></div></div>",
+        cfg->enable_last_step ? "selected" : "",
+        !cfg->enable_last_step ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<div class='grid'>"
+        "<div class='form-group'><label>Дежурный ночник первой ступени</label><select name='night_first'>"
+    );
+    snprintf(buf, sizeof(buf),
+        "<option value='1' %s>Светится ночью (дежурный свет)</option>"
+        "<option value='0' %s>Отключена ночью</option></select></div>",
+        cfg->night_first_step ? "selected" : "",
+        !cfg->night_first_step ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Дежурный ночник последней ступени</label><select name='night_last'>");
+    snprintf(buf, sizeof(buf),
+        "<option value='1' %s>Светится ночью (дежурный свет)</option>"
+        "<option value='0' %s>Отключена ночью</option></select></div></div>",
+        cfg->night_last_step ? "selected" : "",
+        !cfg->night_last_step ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
     httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Задержка включения (мс)</label>");
     snprintf(buf, sizeof(buf), "<input type='number' name='step_on' value='%u' min='20' max='5000'></div>", (unsigned int)cfg->step_on_time_ms);
     httpd_resp_sendstr_chunk(req, buf);
@@ -103,17 +146,54 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='cb' value='%u' min='0' max='255'></div></div>", (unsigned int)cfg->color_b);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<h2>Датчики и GPIO</h2><div class='grid'><div class='form-group'><label>GPIO ленты WS2812</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_led' value='%u'></div>", (unsigned int)cfg->led_gpio);
+    httpd_resp_sendstr_chunk(req,
+        "<h2>Датчики и GPIO</h2>"
+        "<div class='grid'>"
+        "<div class='form-group'><label>Тип датчиков</label><select name='sensor_type'>"
+    );
+    snprintf(buf, sizeof(buf),
+        "<option value='0' %s>PIR / Оптический (HIGH/LOW)</option>"
+        "<option value='1' %s>Ультразвуковой HC-SR04 (см)</option></select></div>",
+        cfg->sensor_type == 0 ? "selected" : "",
+        cfg->sensor_type == 1 ? "selected" : ""
+    );
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO нижнего датчика</label>");
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Порог HC-SR04 (см)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='us_trigger_dist' value='%u' min='10' max='300'></div></div>", (unsigned int)cfg->ultrasonic_trigger_distance_cm);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Макс. дистанция HC-SR04 (см)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='us_max_dist' value='%u' min='50' max='400'></div>", (unsigned int)cfg->ultrasonic_max_distance_cm);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO ленты WS2812</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_led' value='%u'></div></div>", (unsigned int)cfg->led_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>GPIO нижнего датчика (TRIG)</label>");
     snprintf(buf, sizeof(buf), "<input type='number' name='gpio_sb' value='%u'></div>", (unsigned int)cfg->sensor_bottom_gpio);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO верхнего датчика</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st' value='%u'></div></div>", (unsigned int)cfg->sensor_top_gpio);
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO нижнего ECHO (HC-SR04)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='echo_b' value='%u'></div></div>", (unsigned int)cfg->sensor_bottom_echo_gpio);
     httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>GPIO верхнего датчика (TRIG)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='gpio_st' value='%u'></div>", (unsigned int)cfg->sensor_top_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>GPIO верхнего ECHO (HC-SR04)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='echo_t' value='%u'></div></div>", (unsigned int)cfg->sensor_top_echo_gpio);
+    httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<div style='margin:12px 0;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:13px;font-weight:600;color:#fcd34d;margin-bottom:4px'>Ручной сброс датчиков</div>"
+        "<div style='font-size:12px;color:#94a3b8;margin-bottom:8px'>Сбрасывает текущее состояние и защелки датчиков в режим ожидания.</div>"
+        "<button type='button' class='btn btn-warning' onclick=\"fetch('/api/trigger?dir=reset_sensors').then(()=>{alert('Состояние датчиков сброшено!')})\">🔄 Сбросить состояние датчиков прямо сейчас</button>"
+        "</div>"
+    );
 
     httpd_resp_sendstr_chunk(req,
         "<div class='grid'>"
@@ -224,6 +304,10 @@ esp_err_t settings_post_handler(httpd_req_t *req)
     cfg->pixels_per_step = (uint16_t)web_get_post_param_int(post_buf, "pixels", cfg->pixels_per_step);
     cfg->brightness = (uint8_t)web_get_post_param_int(post_buf, "brightness", cfg->brightness);
     cfg->night_brightness = (uint8_t)web_get_post_param_int(post_buf, "night_brightness", cfg->night_brightness);
+    cfg->enable_first_step = (web_get_post_param_int(post_buf, "en_first", 1) == 1);
+    cfg->enable_last_step = (web_get_post_param_int(post_buf, "en_last", 1) == 1);
+    cfg->night_first_step = (web_get_post_param_int(post_buf, "night_first", 1) == 1);
+    cfg->night_last_step = (web_get_post_param_int(post_buf, "night_last", 1) == 1);
     cfg->step_on_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_on", cfg->step_on_time_ms);
     cfg->step_off_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_off", cfg->step_off_time_ms);
     cfg->hold_time_ms = (uint16_t)web_get_post_param_int(post_buf, "hold", cfg->hold_time_ms);
@@ -239,6 +323,12 @@ esp_err_t settings_post_handler(httpd_req_t *req)
     cfg->led_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_led", cfg->led_gpio);
     cfg->sensor_bottom_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_sb", cfg->sensor_bottom_gpio);
     cfg->sensor_top_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_st", cfg->sensor_top_gpio);
+    cfg->sensor_bottom_echo_gpio = (uint8_t)web_get_post_param_int(post_buf, "echo_b", cfg->sensor_bottom_echo_gpio);
+    cfg->sensor_top_echo_gpio = (uint8_t)web_get_post_param_int(post_buf, "echo_t", cfg->sensor_top_echo_gpio);
+
+    cfg->sensor_type = (uint8_t)web_get_post_param_int(post_buf, "sensor_type", cfg->sensor_type);
+    cfg->ultrasonic_trigger_distance_cm = (uint16_t)web_get_post_param_int(post_buf, "us_trigger_dist", cfg->ultrasonic_trigger_distance_cm);
+    cfg->ultrasonic_max_distance_cm = (uint16_t)web_get_post_param_int(post_buf, "us_max_dist", cfg->ultrasonic_max_distance_cm);
 
     cfg->sensor_active_high = (web_get_post_param_int(post_buf, "active_high", 1) == 1);
     cfg->sensor_debounce_ms = (uint16_t)web_get_post_param_int(post_buf, "debounce", cfg->sensor_debounce_ms);

@@ -106,7 +106,8 @@ uint32_t staircase_get_hold_remaining_ms(void);
 void staircase_trigger_bottom(void);
 void staircase_trigger_top(void);
 void staircase_set_manual_on(void);
-void staircase_set_manual_off(void);`
+void staircase_set_manual_off(void);
+void staircase_reset_sensors(void);`
   },
   {
     name: 'staircase.c',
@@ -300,6 +301,17 @@ esp_err_t staircase_init(staircase_settings_t *settings)
     cfg = *settings;
     xTaskCreate(fsm_task, "stair_fsm_task", 4096, NULL, 5, &fsm_task_handle);
     return ESP_OK;
+}
+
+void staircase_reset_sensors(void)
+{
+    ESP_LOGI(TAG, "Manual sensor reset requested");
+    current_state = STAIRCASE_STATE_IDLE;
+    if (cfg.night_mode) {
+        staircase_led_apply_night_mode(&cfg);
+    } else {
+        staircase_led_clear();
+    }
 }`
   },
   {
@@ -711,6 +723,7 @@ esp_err_t index_handler(httpd_req_t *req)
         "<button class='btn' onclick=\\"fetch('/api/trigger?dir=all_on').then(updateState)\\">💡 Включить всё</button>"
         "<button class='btn btn-danger' onclick=\\"fetch('/api/trigger?dir=all_off').then(updateState)\\">🌑 Выключить всё</button>"
         "</div>"
+        "<div style='margin-top:8px'><button class='btn btn-warning' style='width:100%' onclick=\"fetch('/api/trigger?dir=reset_sensors').then(updateState)\">🔄 Сбросить состояние датчиков</button></div>"
         "</div>"
     );
 
@@ -872,6 +885,14 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Макс. дистанция HC-SR04 (см)</label>");
     snprintf(buf, sizeof(buf), "<input type='number' name='us_max_dist' value='%u' min='50' max='400'></div></div>", (unsigned int)cfg->ultrasonic_max_distance_cm);
     httpd_resp_sendstr_chunk(req, buf);
+
+    httpd_resp_sendstr_chunk(req,
+        "<div style='margin:12px 0;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:13px;font-weight:600;color:#fcd34d;margin-bottom:4px'>Ручной сброс датчиков</div>"
+        "<div style='font-size:12px;color:#94a3b8;margin-bottom:8px'>Сбрасывает текущее состояние и защелки датчиков (HC-SR04 / PIR) в режим ожидания.</div>"
+        "<button type='button' class='btn btn-warning' onclick=\"fetch('/api/trigger?dir=reset_sensors').then(()=>{alert('Состояние датчиков сброшено!')})\">🔄 Сбросить состояние датчиков прямо сейчас</button>"
+        "</div>"
+    );
 
     httpd_resp_sendstr_chunk(req,
         "<div class='grid'>"
@@ -1106,6 +1127,9 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
                 staircase_set_manual_on();
             } else if (strcmp(dir, "all_off") == 0) {
                 staircase_set_manual_off();
+            } else if (strcmp(dir, "reset_sensors") == 0) {
+                sensors_reset_state();
+                staircase_reset_sensors();
             } else if (strcmp(dir, "toggle") == 0) {
                 char step_str[16] = {0};
                 if (httpd_query_key_value(query, "step", step_str, sizeof(step_str)) == ESP_OK) {
@@ -1215,7 +1239,8 @@ int sensor_top_level(void);
 // Функции для работы с ультразвуковыми дальномерами HC-SR04
 uint16_t sensor_bottom_distance_cm(void);
 uint16_t sensor_top_distance_cm(void);
-bool sensor_is_ultrasonic(void);`
+bool sensor_is_ultrasonic(void);
+void sensors_reset_state(void);`
   },
   {
     name: 'sensors.c',
@@ -1427,6 +1452,15 @@ bool sensor_top_active(void)
         }
     }
     return last_top_state;
+}
+
+void sensors_reset_state(void)
+{
+    last_bottom_state = false;
+    last_top_state = false;
+    bottom_dist_cm = 999;
+    top_dist_cm = 999;
+    ESP_LOGI(TAG, "Sensors manually reset to idle state");
 }`
   },
   {
@@ -1457,6 +1491,11 @@ typedef struct {
     bool sensor_active_high;
     uint16_t sensor_debounce_ms;
     bool night_mode;
+    // Управление первой и последней ступенью
+    bool enable_first_step;
+    bool enable_last_step;
+    bool night_first_step;
+    bool night_last_step;
     char wifi_ssid[32];
     char wifi_password[64];
     char hostname[32];
@@ -1518,6 +1557,10 @@ void settings_init(staircase_settings_t *settings)
     settings->sensor_active_high = true;
     settings->sensor_debounce_ms = 50;
     settings->night_mode = false;
+    settings->enable_first_step = true;
+    settings->enable_last_step = true;
+    settings->night_first_step = true;
+    settings->night_last_step = true;
     strncpy(settings->wifi_ssid, "ESP-Lestn", sizeof(settings->wifi_ssid));
     settings->wifi_password[0] = '\0';
     strncpy(settings->hostname, "esp-lestn", sizeof(settings->hostname));

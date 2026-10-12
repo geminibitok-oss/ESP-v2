@@ -45,6 +45,12 @@ export interface StaircaseSettings {
   sensor_active_high: boolean;
   sensor_debounce_ms: number;
 
+  // Step Enablement (First & Last step disable options)
+  enable_first_step: boolean;
+  enable_last_step: boolean;
+  night_first_step: boolean;
+  night_last_step: boolean;
+
   // Sensor Type & Ultrasonic HC-SR04 Configuration
   // 0: PIR / Optical (Digital GPIO), 1: Ultrasonic HC-SR04
   sensor_type: number;

@@ -19,6 +19,8 @@ static uint16_t pixels_per_step = 0;
 
 static bool step_state[STAIR_MAX_STEPS] = {false};
 static uint8_t led_gpio = 4;
+static bool enable_first_step = true;
+static bool enable_last_step = true;
 
 static uint8_t scale_color(uint8_t color, uint8_t brightness_pct)
 {
@@ -43,6 +45,8 @@ esp_err_t staircase_led_init(const staircase_settings_t *settings)
     step_count = settings->steps;
     pixels_per_step = settings->pixels_per_step;
     total_pixels = step_count * pixels_per_step;
+    enable_first_step = settings->enable_first_step;
+    enable_last_step = settings->enable_last_step;
 
     memset(step_state, 0, sizeof(step_state));
 
@@ -141,6 +145,13 @@ void staircase_led_set_step_scaled(
     if (strip == NULL || led_mutex == NULL || step >= step_count || step >= STAIR_MAX_STEPS)
         return;
 
+    /* If step is disabled, force off */
+    if (step == 0 && !enable_first_step) {
+        red = 0; green = 0; blue = 0; brightness_pct = 0;
+    } else if (step_count > 0 && step == (step_count - 1) && !enable_last_step) {
+        red = 0; green = 0; blue = 0; brightness_pct = 0;
+    }
+
     uint8_t r = scale_color(red, brightness_pct);
     uint8_t g = scale_color(green, brightness_pct);
     uint8_t b = scale_color(blue, brightness_pct);
@@ -207,12 +218,16 @@ void staircase_led_all_on(
 
     if (xSemaphoreTake(led_mutex, pdMS_TO_TICKS(500)) == pdTRUE)
     {
-        for (uint16_t p = 0; p < total_pixels; p++) {
-            staircase_led_set_pixel(p, r, g, b);
-        }
-
         for (uint16_t s = 0; s < step_count && s < STAIR_MAX_STEPS; s++) {
-            step_state[s] = (r != 0 || g != 0 || b != 0);
+            bool allow = true;
+            if (s == 0 && !enable_first_step) allow = false;
+            if (step_count > 0 && s == (step_count - 1) && !enable_last_step) allow = false;
+
+            uint16_t first = s * pixels_per_step;
+            for (uint16_t i = 0; i < pixels_per_step; i++) {
+                staircase_led_set_pixel(first + i, allow ? r : 0, allow ? g : 0, allow ? b : 0);
+            }
+            step_state[s] = allow && (r != 0 || g != 0 || b != 0);
         }
 
         staircase_led_show();
@@ -246,8 +261,8 @@ void staircase_led_apply_night_mode(const staircase_settings_t *settings)
         }
 
         if (settings->night_mode_type == 0) {
-            /* First and last steps only */
-            if (step_count > 0) {
+            /* First and last steps only, respecting night toggles and general step enablement */
+            if (step_count > 0 && settings->night_first_step && settings->enable_first_step) {
                 uint16_t first_pixel_0 = 0;
                 for (uint16_t i = 0; i < pixels_per_step; i++) {
                     staircase_led_set_pixel(first_pixel_0 + i, r, g, b);
@@ -255,7 +270,7 @@ void staircase_led_apply_night_mode(const staircase_settings_t *settings)
                 step_state[0] = true;
             }
 
-            if (step_count > 1) {
+            if (step_count > 1 && settings->night_last_step && settings->enable_last_step) {
                 uint16_t last_step = step_count - 1;
                 uint16_t first_pixel_last = last_step * pixels_per_step;
                 for (uint16_t i = 0; i < pixels_per_step; i++) {
@@ -264,13 +279,19 @@ void staircase_led_apply_night_mode(const staircase_settings_t *settings)
                 step_state[last_step] = true;
             }
         } else {
-            /* All steps at night brightness */
+            /* All steps at night brightness, respecting disabled steps */
             for (uint16_t s = 0; s < step_count && s < STAIR_MAX_STEPS; s++) {
-                uint16_t first = s * pixels_per_step;
-                for (uint16_t i = 0; i < pixels_per_step; i++) {
-                    staircase_led_set_pixel(first + i, r, g, b);
+                bool allow = true;
+                if (s == 0 && (!settings->enable_first_step || !settings->night_first_step)) allow = false;
+                if (step_count > 0 && s == (step_count - 1) && (!settings->enable_last_step || !settings->night_last_step)) allow = false;
+
+                if (allow) {
+                    uint16_t first = s * pixels_per_step;
+                    for (uint16_t i = 0; i < pixels_per_step; i++) {
+                        staircase_led_set_pixel(first + i, r, g, b);
+                    }
+                    step_state[s] = true;
                 }
-                step_state[s] = true;
             }
         }
 

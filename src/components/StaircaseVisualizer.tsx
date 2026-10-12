@@ -59,10 +59,19 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
         setStepStates((prev) => {
           const next = [...prev];
           for (let i = 0; i < settings.steps; i++) {
+            const isFirst = i === 0;
+            const isLast = i === settings.steps - 1;
+            const allowFirst = (settings.enable_first_step ?? true) && (settings.night_first_step ?? true);
+            const allowLast = (settings.enable_last_step ?? true) && (settings.night_last_step ?? true);
+
             if (settings.night_mode_type === 0) {
-              next[i] = (i === 0 || i === settings.steps - 1);
+              if (isFirst) next[i] = allowFirst;
+              else if (isLast) next[i] = allowLast;
+              else next[i] = false;
             } else {
-              next[i] = true;
+              if (isFirst) next[i] = allowFirst;
+              else if (isLast) next[i] = allowLast;
+              else next[i] = true;
             }
           }
           return next;
@@ -71,7 +80,17 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
         setStepStates(Array(settings.steps).fill(false));
       }
     }
-  }, [fsmState, settings.night_mode, settings.night_mode_type, isDayTime, settings.steps]);
+  }, [
+    fsmState, 
+    settings.night_mode, 
+    settings.night_mode_type, 
+    settings.enable_first_step, 
+    settings.enable_last_step, 
+    settings.night_first_step, 
+    settings.night_last_step, 
+    isDayTime, 
+    settings.steps
+  ]);
 
   const clearAllAnimTimeouts = () => {
     animTimeoutRef.current.forEach((t) => clearTimeout(t));
@@ -94,7 +113,11 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
       const t = setTimeout(() => {
         setStepStates((prev) => {
           const next = [...prev];
-          next[step] = true;
+          const isFirstDisabled = step === 0 && !(settings.enable_first_step ?? true);
+          const isLastDisabled = step === total - 1 && !(settings.enable_last_step ?? true);
+          if (!isFirstDisabled && !isLastDisabled) {
+            next[step] = true;
+          }
           return next;
         });
 
@@ -122,7 +145,11 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
       const t = setTimeout(() => {
         setStepStates((prev) => {
           const next = [...prev];
-          next[step] = true;
+          const isFirstDisabled = step === 0 && !(settings.enable_first_step ?? true);
+          const isLastDisabled = step === total - 1 && !(settings.enable_last_step ?? true);
+          if (!isFirstDisabled && !isLastDisabled) {
+            next[step] = true;
+          }
           return next;
         });
 
@@ -131,6 +158,26 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
         }
       }, stepIdxFromTop * delay);
       animTimeoutRef.current.push(t);
+    }
+  };
+
+  const resetSensors = () => {
+    clearAllAnimTimeouts();
+    setBottomSensorActive(false);
+    setTopSensorActive(false);
+    setHoldRemainingMs(0);
+    setFsmState('IDLE');
+    if (settings.night_mode && !isDayTime) {
+      if (settings.night_mode_type === 0) {
+        const next = Array(settings.steps).fill(false);
+        if (settings.night_first_step ?? true) next[0] = true;
+        if (settings.night_last_step ?? true) next[settings.steps - 1] = true;
+        setStepStates(next);
+      } else {
+        setStepStates(Array(settings.steps).fill(true));
+      }
+    } else {
+      setStepStates(Array(settings.steps).fill(false));
     }
   };
 
@@ -203,7 +250,10 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
     clearAllAnimTimeouts();
     if (turnOn) {
       setFsmState('MANUAL_ON');
-      setStepStates(Array(settings.steps).fill(true));
+      const all = Array(settings.steps).fill(true);
+      if (!(settings.enable_first_step ?? true)) all[0] = false;
+      if (!(settings.enable_last_step ?? true)) all[settings.steps - 1] = false;
+      setStepStates(all);
     } else {
       setFsmState('IDLE');
       setStepStates(Array(settings.steps).fill(false));
@@ -290,7 +340,7 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
         </div>
 
         {/* Action Trigger Buttons */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-4">
           <button
             id="trigger-bottom-btn"
             onClick={triggerBottom}
@@ -302,11 +352,11 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <Footprints className="w-4 h-4" />
-              <span>{settings.sensor_type === 1 ? 'Подход снизу (HC-SR04)' : 'Шаг снизу (PIR)'}</span>
+              <span>{settings.sensor_type === 1 ? 'Снизу (HC-SR04)' : 'Шаг снизу (PIR)'}</span>
             </div>
             <span className="text-[10px] text-emerald-400/80">
               {settings.sensor_type === 1 
-                ? `TRIG ${settings.sensor_bottom_gpio} / ECHO ${settings.sensor_bottom_echo_gpio ?? 18}`
+                ? `Порог: <${settings.ultrasonic_trigger_distance_cm ?? 80} см`
                 : `Датчик GPIO ${settings.sensor_bottom_gpio}`}
             </span>
           </button>
@@ -322,31 +372,44 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <Footprints className="w-4 h-4 rotate-180" />
-              <span>{settings.sensor_type === 1 ? 'Подход сверху (HC-SR04)' : 'Шаг сверху (PIR)'}</span>
+              <span>{settings.sensor_type === 1 ? 'Сверху (HC-SR04)' : 'Шаг сверху (PIR)'}</span>
             </div>
             <span className="text-[10px] text-emerald-400/80">
               {settings.sensor_type === 1 
-                ? `TRIG ${settings.sensor_top_gpio} / ECHO ${settings.sensor_top_echo_gpio ?? 19}`
+                ? `Порог: <${settings.ultrasonic_trigger_distance_cm ?? 80} см`
                 : `Датчик GPIO ${settings.sensor_top_gpio}`}
             </span>
           </button>
 
           <button
-            id="manual-on-btn"
-            onClick={() => toggleManualAll(true)}
-            className="p-3 rounded-xl bg-amber-950/30 hover:bg-amber-900/40 border border-amber-800/50 text-amber-300 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+            id="reset-sensors-btn"
+            onClick={resetSensors}
+            className="p-3 rounded-xl bg-amber-950/30 hover:bg-amber-900/40 border border-amber-800/50 text-amber-300 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm"
+            title="Ручной сброс состояния датчиков движения в IDLE"
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <Lightbulb className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4 text-amber-400" />
+              <span>Сброс датчиков</span>
+            </div>
+            <span className="text-[10px] text-amber-400/80">В режим ожидания</span>
+          </button>
+
+          <button
+            id="manual-on-btn"
+            onClick={() => toggleManualAll(true)}
+            className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-750 text-slate-200 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+          >
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Lightbulb className="w-4 h-4 text-amber-300" />
               <span>Включить всё</span>
             </div>
-            <span className="text-[10px] text-amber-400/80">100% Яркость</span>
+            <span className="text-[10px] text-slate-400">100% Яркость</span>
           </button>
 
           <button
             id="manual-off-btn"
             onClick={() => toggleManualAll(false)}
-            className="p-3 rounded-xl bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/50 text-rose-300 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+            className="p-3 rounded-xl bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/50 text-rose-300 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 col-span-2 sm:col-span-1"
           >
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <Power className="w-4 h-4" />
@@ -558,6 +621,125 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
                 </label>
               </div>
             </div>
+
+            {/* First & Last Steps Toggles */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-zinc-800">
+              <div className="bg-zinc-800/60 p-3 rounded-xl border border-zinc-700/60">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-zinc-200">
+                    Первая ступень (Снизу, #1)
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    !(settings.enable_first_step ?? true)
+                      ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                      : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  }`}>
+                    {!(settings.enable_first_step ?? true) ? 'Отключена' : 'Активна'}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5 text-xs text-zinc-300">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.enable_first_step ?? true}
+                      onChange={(e) => onUpdateSettings({ enable_first_step: e.target.checked })}
+                      className="rounded border-zinc-700 text-sky-500 focus:ring-0"
+                    />
+                    <span>Основная подсветка (анимации)</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!(settings.enable_first_step ?? true)}
+                      checked={(settings.enable_first_step ?? true) && (settings.night_first_step ?? true)}
+                      onChange={(e) => onUpdateSettings({ night_first_step: e.target.checked })}
+                      className="rounded border-zinc-700 text-sky-500 focus:ring-0 disabled:opacity-40"
+                    />
+                    <span>Дежурный ночник</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-zinc-800/60 p-3 rounded-xl border border-zinc-700/60">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-zinc-200">
+                    Последняя ступень (Сверху, #{settings.steps})
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    !(settings.enable_last_step ?? true)
+                      ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                      : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  }`}>
+                    {!(settings.enable_last_step ?? true) ? 'Отключена' : 'Активна'}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5 text-xs text-zinc-300">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.enable_last_step ?? true}
+                      onChange={(e) => onUpdateSettings({ enable_last_step: e.target.checked })}
+                      className="rounded border-zinc-700 text-sky-500 focus:ring-0"
+                    />
+                    <span>Основная подсветка (анимации)</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={!(settings.enable_last_step ?? true)}
+                      checked={(settings.enable_last_step ?? true) && (settings.night_last_step ?? true)}
+                      onChange={(e) => onUpdateSettings({ night_last_step: e.target.checked })}
+                      className="rounded border-zinc-700 text-sky-500 focus:ring-0 disabled:opacity-40"
+                    />
+                    <span>Дежурный ночник</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Sensor Type & Ultrasonic Threshold Slider */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-zinc-800">
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1.5 font-medium">
+                  Тип датчиков присутствия:
+                </label>
+                <select
+                  value={settings.sensor_type ?? 0}
+                  onChange={(e) => onUpdateSettings({ sensor_type: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value={0}>👁️ PIR / Оптический (цифровой вход)</option>
+                  <option value={1}>📡 Ультразвуковой дальномер HC-SR04 (см)</option>
+                </select>
+              </div>
+
+              {settings.sensor_type === 1 ? (
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs text-zinc-400 font-medium">
+                      Порог срабатывания HC-SR04: <strong className="text-sky-400">{settings.ultrasonic_trigger_distance_cm ?? 80} см</strong>
+                    </label>
+                    <span className="text-[10px] text-zinc-500 font-mono">10-300 см</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="300"
+                    step="5"
+                    value={settings.ultrasonic_trigger_distance_cm ?? 80}
+                    onChange={(e) => onUpdateSettings({ ultrasonic_trigger_distance_cm: parseInt(e.target.value) || 80 })}
+                    className="w-full accent-sky-500 cursor-pointer"
+                  />
+                  <div className="text-[10px] text-zinc-500 mt-1">
+                    Срабатывает, если человек подходит ближе {settings.ultrasonic_trigger_distance_cm ?? 80} см
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center text-xs text-zinc-400">
+                  <span>PIR сенсор срабатывает при детектировании инфракрасного излучения человека (лог. уровень HIGH).</span>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -635,10 +817,30 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
                   />
 
                   {/* Step Label & Number */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-mono text-zinc-400 font-medium group-hover:text-zinc-200">
                       Ступень #{stepNum}
                     </span>
+                    {idx === 0 && !(settings.enable_first_step ?? true) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-medium">
+                        Отключена
+                      </span>
+                    )}
+                    {idx === settings.steps - 1 && !(settings.enable_last_step ?? true) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60 font-medium">
+                        Отключена
+                      </span>
+                    )}
+                    {idx === 0 && (settings.enable_first_step ?? true) && !(settings.night_first_step ?? true) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        Ночник выкл.
+                      </span>
+                    )}
+                    {idx === settings.steps - 1 && (settings.enable_last_step ?? true) && !(settings.night_last_step ?? true) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        Ночник выкл.
+                      </span>
+                    )}
                     {isNightLight && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/40">
                         Ночник ({settings.night_brightness}%)

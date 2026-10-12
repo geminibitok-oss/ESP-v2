@@ -57,6 +57,12 @@ const DEFAULT_SETTINGS: StaircaseSettings = {
   sensor_active_high: true,
   sensor_debounce_ms: 60,
 
+  // First & Last Steps illumination
+  enable_first_step: true,
+  enable_last_step: true,
+  night_first_step: true,
+  night_last_step: true,
+
   // Sensor Type & Ultrasonic HC-SR04
   sensor_type: 0, // 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic
   sensor_bottom_echo_gpio: 18, // Bottom ECHO pin (TRIG uses sensor_bottom_gpio = 23)

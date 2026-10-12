@@ -19,7 +19,8 @@ typedef enum
     CMD_MANUAL_OFF,
     CMD_TOGGLE_MANUAL,
     CMD_SETTINGS_UPDATED,
-    CMD_ASTRO_EVENT
+    CMD_ASTRO_EVENT,
+    CMD_RESET_SENSORS
 } stair_cmd_type_t;
 
 typedef struct
@@ -101,6 +102,12 @@ void staircase_toggle_manual(void)
     send_cmd(CMD_TOGGLE_MANUAL);
 }
 
+void staircase_reset_sensors(void)
+{
+    ESP_LOGI(TAG, "Manual reset sensors requested");
+    send_cmd(CMD_RESET_SENSORS);
+}
+
 void staircase_on_sensor_event(sensor_event_type_t event)
 {
     if (event == SENSOR_EVENT_BOTTOM_TRIGGERED) {
@@ -171,10 +178,11 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     current_state = STAIR_STATE_MANUAL_ON;
                 }
-                else if (cmd.type == CMD_SETTINGS_UPDATED || cmd.type == CMD_ASTRO_EVENT)
+                else if (cmd.type == CMD_SETTINGS_UPDATED || cmd.type == CMD_ASTRO_EVENT || cmd.type == CMD_RESET_SENSORS)
                 {
                     if (cfg->night_mode) staircase_led_apply_night_mode(cfg);
                     else staircase_led_clear();
+                    current_state = STAIR_STATE_IDLE;
                 }
             }
         }
@@ -552,7 +560,7 @@ static void staircase_fsm_task(void *pvParameters)
                         hold_start_time_us = esp_timer_get_time();
                         ESP_LOGI(TAG, "Hold timer extended by sensor re-trigger");
                     }
-                    else if (cmd.type == CMD_MANUAL_OFF)
+                    else if (cmd.type == CMD_MANUAL_OFF || cmd.type == CMD_RESET_SENSORS)
                     {
                         if (cfg->night_mode) staircase_led_apply_night_mode(cfg);
                         else staircase_led_clear();

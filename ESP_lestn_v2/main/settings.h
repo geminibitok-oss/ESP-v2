@@ -87,8 +87,19 @@ typedef struct
     bool reverse_direction;     /* Turn off in opposite direction */
     bool sensor_active_high;    /* Sensor active level (true = HIGH/3.3V, false = LOW/GND) */
 
-    /* Sensor filter */
+    /* First & Last Steps Illumination Control */
+    bool enable_first_step;     /* true = first step active, false = disabled entirely */
+    bool enable_last_step;      /* true = last step active, false = disabled entirely */
+    bool night_first_step;      /* true = first step lit in night mode, false = off at night */
+    bool night_last_step;       /* true = last step lit in night mode, false = off at night */
+
+    /* Sensor filter & Ultrasonic HC-SR04 */
     uint16_t sensor_debounce_ms; /* Debounce time in ms */
+    uint8_t sensor_type;         /* 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic */
+    uint8_t sensor_bottom_echo_gpio;
+    uint8_t sensor_top_echo_gpio;
+    uint16_t ultrasonic_trigger_distance_cm; /* Distance threshold in cm (e.g. 80) */
+    uint16_t ultrasonic_max_distance_cm;     /* Max range in cm (e.g. 200) */
 
     /* Internet Time & Astronomical Sun Schedule */
     bool ntp_enabled;           /* Enable NTP Internet time sync */

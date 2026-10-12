@@ -56,6 +56,9 @@ esp_err_t index_handler(httpd_req_t *req)
         "<button class='btn' onclick=\"fetch('/api/trigger?dir=all_on').then(updateState)\">💡 Включить всё</button>"
         "<button class='btn btn-danger' onclick=\"fetch('/api/trigger?dir=all_off').then(updateState)\">🌑 Выключить всё</button>"
         "</div>"
+        "<div style='margin-top:8px'>"
+        "<button class='btn btn-warning' style='width:100%' onclick=\"fetch('/api/trigger?dir=reset_sensors').then(updateState)\">🔄 Сбросить состояние датчиков</button>"
+        "</div>"
         "</div>"
     );
 

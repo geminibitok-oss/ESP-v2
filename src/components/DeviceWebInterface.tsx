@@ -13,7 +13,14 @@ import {
   Sparkles,
   MapPin,
   Upload,
-  RotateCw
+  RotateCw,
+  RotateCcw,
+  Sliders,
+  Layers,
+  Radar,
+  Gauge,
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 
 interface DeviceWebInterfaceProps {
@@ -37,6 +44,22 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
   const [otaSuccess, setOtaSuccess] = useState(false);
   const [otaRebootTimer, setOtaRebootTimer] = useState<number | null>(null);
   const [activePartition, setActivePartition] = useState<'ota_0' | 'ota_1'>('ota_0');
+
+  // Sensor state reset state
+  const [isResettingSensors, setIsResettingSensors] = useState(false);
+  const [sensorResetFeedback, setSensorResetFeedback] = useState<string | null>(null);
+
+  const handleManualResetSensors = () => {
+    setIsResettingSensors(true);
+    setSensorResetFeedback('Датчики сброшены');
+    setSaveToast('Состояние аппаратных датчиков сброшено в режим ожидания (IDLE)!');
+    setTimeout(() => {
+      setIsResettingSensors(false);
+      setTimeout(() => {
+        setSensorResetFeedback(null);
+      }, 3500);
+    }, 400);
+  };
 
   useEffect(() => {
     setFormState(settings);
@@ -292,9 +315,9 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                       Нижний датчик {formState.sensor_type === 1 ? `(TRIG: ${settings.sensor_bottom_gpio}, ECHO: ${settings.sensor_bottom_echo_gpio ?? 18})` : `(GPIO ${settings.sensor_bottom_gpio})`}
                     </div>
                     <div className="text-sm font-semibold text-emerald-400 mt-1 flex items-center justify-between">
-                      <span>ГОТОВ / ОЖИДАНИЕ</span>
+                      <span>{sensorResetFeedback ? 'СБРОШЕН / ГОТОВ' : 'ГОТОВ / ОЖИДАНИЕ'}</span>
                       {formState.sensor_type === 1 && (
-                        <span className="text-xs font-mono text-sky-400">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
+                        <span className="text-xs font-mono text-sky-400 bg-sky-950/60 border border-sky-800/40 px-2 py-0.5 rounded">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
                       )}
                     </div>
                   </div>
@@ -303,12 +326,40 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                       Верхний датчик {formState.sensor_type === 1 ? `(TRIG: ${settings.sensor_top_gpio}, ECHO: ${settings.sensor_top_echo_gpio ?? 19})` : `(GPIO ${settings.sensor_top_gpio})`}
                     </div>
                     <div className="text-sm font-semibold text-emerald-400 mt-1 flex items-center justify-between">
-                      <span>ГОТОВ / ОЖИДАНИЕ</span>
+                      <span>{sensorResetFeedback ? 'СБРОШЕН / ГОТОВ' : 'ГОТОВ / ОЖИДАНИЕ'}</span>
                       {formState.sensor_type === 1 && (
-                        <span className="text-xs font-mono text-sky-400">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
+                        <span className="text-xs font-mono text-sky-400 bg-sky-950/60 border border-sky-800/40 px-2 py-0.5 rounded">Порог: &lt;{formState.ultrasonic_trigger_distance_cm ?? 80} см</span>
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Manual sensor reset action bar */}
+                <div className="p-3 bg-slate-900/90 border border-slate-700/70 rounded-xl flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Activity className={`w-4 h-4 ${isResettingSensors ? 'text-amber-400 animate-spin' : 'text-emerald-400'}`} />
+                    <div>
+                      <div className="text-xs font-medium text-slate-200">
+                        {sensorResetFeedback ? 'Состояние датчиков сброшено в режим ожидания' : 'Аппаратные датчики в режиме ожидания'}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {formState.sensor_type === 1
+                          ? `HC-SR04: сработка при приближении объекта ближе ${formState.ultrasonic_trigger_distance_cm ?? 80} см`
+                          : 'PIR: сработка при изменении логического уровня HIGH/LOW'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleManualResetSensors}
+                    disabled={isResettingSensors}
+                    className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                    title="Ручной сброс состояния датчиков движения"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isResettingSensors ? 'animate-spin' : ''}`} />
+                    <span>{isResettingSensors ? 'Сброс...' : 'Сбросить состояние датчиков'}</span>
+                  </button>
                 </div>
 
                 <div className="text-xs text-slate-300 space-y-1">
@@ -633,6 +684,135 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                   </div>
                 </div>
 
+                {/* Section: First and Last Step Illumination Controls */}
+                <div className="mt-4 pt-4 border-t border-slate-700/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-sky-400" />
+                      <h3 className="text-sm font-semibold text-slate-200">
+                        Подсветка первой и последней ступени
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      Отключение крайних ступеней
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                    Настройка независимого включения/отключения первой (#1) и последней (#{formState.steps}) ступени в основных анимациях и в ночном дежурном режиме.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* First Step Card */}
+                    <div className={`p-3.5 rounded-xl border transition-all ${
+                      !(formState.enable_first_step ?? true)
+                        ? 'bg-rose-950/20 border-rose-900/50'
+                        : 'bg-slate-900/80 border-slate-700/80'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2.5 h-2.5 rounded-full ${
+                            !(formState.enable_first_step ?? true) ? 'bg-rose-500' : 'bg-emerald-400'
+                          }`} />
+                          <span className="text-xs font-semibold text-slate-200">
+                            Первая ступень (Снизу, #1)
+                          </span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          !(formState.enable_first_step ?? true)
+                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                            : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                        }`}>
+                          {!(formState.enable_first_step ?? true) ? 'Отключена' : 'Активна'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formState.enable_first_step ?? true}
+                            onChange={(e) => setFormState({ ...formState, enable_first_step: e.target.checked })}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-700 text-sky-600 focus:ring-0"
+                          />
+                          <div>
+                            <div className="text-xs font-medium text-slate-200">Основная подсветка (анимации)</div>
+                            <div className="text-[10px] text-slate-400">Ступень светится при подъеме/спуске</div>
+                          </div>
+                        </label>
+
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={!(formState.enable_first_step ?? true)}
+                            checked={(formState.enable_first_step ?? true) && (formState.night_first_step ?? true)}
+                            onChange={(e) => setFormState({ ...formState, night_first_step: e.target.checked })}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-700 text-sky-600 focus:ring-0 disabled:opacity-40"
+                          />
+                          <div>
+                            <div className="text-xs font-medium text-slate-200">Дежурный ночник</div>
+                            <div className="text-[10px] text-slate-400">Светится ночью в режиме ожидания</div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Last Step Card */}
+                    <div className={`p-3.5 rounded-xl border transition-all ${
+                      !(formState.enable_last_step ?? true)
+                        ? 'bg-rose-950/20 border-rose-900/50'
+                        : 'bg-slate-900/80 border-slate-700/80'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2.5 h-2.5 rounded-full ${
+                            !(formState.enable_last_step ?? true) ? 'bg-rose-500' : 'bg-emerald-400'
+                          }`} />
+                          <span className="text-xs font-semibold text-slate-200">
+                            Последняя ступень (Сверху, #{formState.steps})
+                          </span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          !(formState.enable_last_step ?? true)
+                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                            : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                        }`}>
+                          {!(formState.enable_last_step ?? true) ? 'Отключена' : 'Активна'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formState.enable_last_step ?? true}
+                            onChange={(e) => setFormState({ ...formState, enable_last_step: e.target.checked })}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-700 text-sky-600 focus:ring-0"
+                          />
+                          <div>
+                            <div className="text-xs font-medium text-slate-200">Основная подсветка (анимации)</div>
+                            <div className="text-[10px] text-slate-400">Ступень светится при подъеме/спуске</div>
+                          </div>
+                        </label>
+
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={!(formState.enable_last_step ?? true)}
+                            checked={(formState.enable_last_step ?? true) && (formState.night_last_step ?? true)}
+                            onChange={(e) => setFormState({ ...formState, night_last_step: e.target.checked })}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-700 text-sky-600 focus:ring-0 disabled:opacity-40"
+                          />
+                          <div>
+                            <div className="text-xs font-medium text-slate-200">Дежурный ночник</div>
+                            <div className="text-[10px] text-slate-400">Светится ночью в режиме ожидания</div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Sensor configuration subsection */}
                 <div className="mt-4 pt-4 border-t border-slate-700/60">
                   <h3 className="text-sm font-semibold text-slate-200 mb-2">Настройка сенсоров присутствия</h3>
@@ -662,11 +842,112 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                   </div>
 
                   {formState.sensor_type === 1 ? (
-                    <div className="p-3 bg-sky-950/30 border border-sky-800/40 rounded-xl space-y-3 mb-4">
-                      <div className="text-xs font-semibold text-sky-300">
-                        Параметры ультразвуковых датчиков HC-SR04:
+                    <div className="p-4 bg-sky-950/40 border border-sky-800/50 rounded-xl space-y-4 mb-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Radar className="w-4 h-4 text-sky-400" />
+                          <span className="text-xs font-semibold text-sky-200">
+                            Параметры ультразвуковых датчиков HC-SR04
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-sky-300 bg-sky-900/60 px-2 py-0.5 rounded border border-sky-700/50">
+                          Порог: {formState.ultrasonic_trigger_distance_cm ?? 80} см
+                        </span>
                       </div>
 
+                      {/* Distance threshold slider and number input */}
+                      <div className="bg-slate-900/80 p-3.5 rounded-lg border border-sky-900/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
+                            <Gauge className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Пороговое расстояние срабатывания (см):</span>
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="10"
+                              max="300"
+                              value={formState.ultrasonic_trigger_distance_cm ?? 80}
+                              onChange={(e) => {
+                                const val = Math.max(10, Math.min(300, parseInt(e.target.value) || 80));
+                                setFormState({ ...formState, ultrasonic_trigger_distance_cm: val });
+                              }}
+                              className="w-20 bg-slate-950 border border-sky-700 rounded px-2 py-1 text-xs text-sky-200 font-mono text-right"
+                            />
+                            <span className="text-xs text-slate-400">см</span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Range Slider */}
+                        <div className="space-y-1">
+                          <input
+                            type="range"
+                            min="10"
+                            max="300"
+                            step="5"
+                            value={formState.ultrasonic_trigger_distance_cm ?? 80}
+                            onChange={(e) => setFormState({
+                              ...formState,
+                              ultrasonic_trigger_distance_cm: parseInt(e.target.value) || 80
+                            })}
+                            className="w-full accent-sky-500 cursor-pointer"
+                          />
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                            <span>10 см (вплотную)</span>
+                            <span>100 см (1 метр)</span>
+                            <span>200 см</span>
+                            <span>300 см (макс)</span>
+                          </div>
+                        </div>
+
+                        {/* Visual Range Indicator Bar */}
+                        <div className="space-y-1 pt-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-emerald-400 font-medium">
+                              🟢 Зона срабатывания (&le; {formState.ultrasonic_trigger_distance_cm ?? 80} см)
+                            </span>
+                            <span className="text-slate-500">
+                              ⚪ Игнорирование (&gt; {formState.ultrasonic_trigger_distance_cm ?? 80} см)
+                            </span>
+                          </div>
+                          <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800 flex">
+                            <div
+                              style={{ width: `${Math.min(100, ((formState.ultrasonic_trigger_distance_cm ?? 80) / 300) * 100)}%` }}
+                              className="h-full bg-gradient-to-r from-emerald-500 via-sky-500 to-sky-400 transition-all duration-150"
+                            />
+                            <div className="flex-1 bg-slate-800/60" />
+                          </div>
+                          <div className="text-[10px] text-slate-400 leading-relaxed">
+                            💡 Подсветка лестницы считается сработавшей и начнет плавное включение, когда дальномер зафиксирует приближение человека на расстояние <strong>{formState.ultrasonic_trigger_distance_cm ?? 80} см</strong> или ближе.
+                          </div>
+                        </div>
+
+                        {/* Presets */}
+                        <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-slate-400 mr-1">Быстрые пресеты:</span>
+                          {[
+                            { label: '40 см (Близко)', val: 40 },
+                            { label: '80 см (Стандарт)', val: 80 },
+                            { label: '120 см (Комфорт)', val: 120 },
+                            { label: '180 см (Дальний)', val: 180 },
+                          ].map((p) => (
+                            <button
+                              key={p.val}
+                              type="button"
+                              onClick={() => setFormState({ ...formState, ultrasonic_trigger_distance_cm: p.val })}
+                              className={`px-2.5 py-1 rounded text-xs transition-all ${
+                                (formState.ultrasonic_trigger_distance_cm ?? 80) === p.val
+                                  ? 'bg-sky-600 text-white font-semibold'
+                                  : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* GPIO TRIG / ECHO Pin Assignments */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-slate-400 mb-1">Нижний: GPIO TRIG (Запуск)</label>
@@ -709,31 +990,18 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-sky-900/40">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-400 mb-1">Порог срабатывания (см)</label>
-                          <input
-                            type="number"
-                            min="10"
-                            max="300"
-                            value={formState.ultrasonic_trigger_distance_cm ?? 80}
-                            onChange={(e) => setFormState({ ...formState, ultrasonic_trigger_distance_cm: parseInt(e.target.value) || 80 })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
-                          />
-                          <span className="text-[10px] text-slate-500">Включать подсветку, если подошли ближе этого расстояния</span>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-400 mb-1">Максимальная дистанция (см)</label>
-                          <input
-                            type="number"
-                            min="50"
-                            max="400"
-                            value={formState.ultrasonic_max_distance_cm ?? 200}
-                            onChange={(e) => setFormState({ ...formState, ultrasonic_max_distance_cm: parseInt(e.target.value) || 200 })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
-                          />
-                          <span className="text-[10px] text-slate-500">Ограничение дальности эхолокации для отсечения шума</span>
-                        </div>
+                      {/* Max distance filter */}
+                      <div className="pt-2 border-t border-sky-900/40">
+                        <label className="block text-xs font-medium text-slate-400 mb-1">Максимальная дистанция эхолокации (см)</label>
+                        <input
+                          type="number"
+                          min="50"
+                          max="400"
+                          value={formState.ultrasonic_max_distance_cm ?? 200}
+                          onChange={(e) => setFormState({ ...formState, ultrasonic_max_distance_cm: parseInt(e.target.value) || 200 })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+                        />
+                        <span className="text-[10px] text-slate-500">Ограничение дальности эхолокации (200 см) отсекает эхо стен и шумы</span>
                       </div>
                     </div>
                   ) : (
@@ -758,6 +1026,29 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {/* Manual Sensor State Reset Card in Settings */}
+                  <div className="p-4 bg-slate-900/90 border border-amber-900/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Ручной сброс состояния датчиков движения</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed max-w-lg">
+                        Мгновенно сбрасывает аппаратные защелки, триггеры и фильтры сенсоров (HC-SR04 / PIR) в исходное состояние ожидания (IDLE), устраняя залипания и ложные срабатывания.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleManualResetSensors}
+                      disabled={isResettingSensors}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg text-xs flex items-center gap-2 shrink-0 transition-all active:scale-95 shadow-md disabled:opacity-60"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${isResettingSensors ? 'animate-spin' : ''}`} />
+                      <span>{isResettingSensors ? 'Сброс...' : 'Сбросить состояние датчиков'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 

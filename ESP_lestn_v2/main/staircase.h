@@ -27,6 +27,7 @@ void staircase_trigger_top(void);
 void staircase_set_manual_on(void);
 void staircase_set_manual_off(void);
 void staircase_toggle_manual(void);
+void staircase_reset_sensors(void);
 
 staircase_state_t staircase_get_state(void);
 const char* staircase_get_state_str(void);

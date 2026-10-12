@@ -186,3 +186,31 @@ int sensor_top_level(void)
 {
     return gpio_get_level(top_gpio);
 }
+
+void sensors_reset_state(void)
+{
+    last_bottom_active = false;
+    last_top_active = false;
+    if (isr_evt_queue != NULL) {
+        uint32_t dummy;
+        while (xQueueReceive(isr_evt_queue, &dummy, 0) == pdTRUE) {
+            /* drained queue */
+        }
+    }
+    ESP_LOGI(TAG, "Sensors manually reset to idle state");
+}
+
+bool sensor_is_ultrasonic(void)
+{
+    return false;
+}
+
+uint16_t sensor_bottom_distance_cm(void)
+{
+    return 999;
+}
+
+uint16_t sensor_top_distance_cm(void)
+{
+    return 999;
+}

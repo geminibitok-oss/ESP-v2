@@ -27,3 +27,8 @@ bool sensor_top_active(void);
 
 int sensor_bottom_level(void);
 int sensor_top_level(void);
+
+void sensors_reset_state(void);
+bool sensor_is_ultrasonic(void);
+uint16_t sensor_bottom_distance_cm(void);
+uint16_t sensor_top_distance_cm(void);

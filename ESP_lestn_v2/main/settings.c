@@ -61,8 +61,19 @@ void settings_reset(staircase_settings_t *s)
     s->reverse_direction = false;
     s->sensor_active_high = true;
 
-    /* Sensor debounce */
+    /* First & Last step controls (default enabled) */
+    s->enable_first_step = true;
+    s->enable_last_step = true;
+    s->night_first_step = true;
+    s->night_last_step = true;
+
+    /* Sensor debounce & Ultrasonic */
     s->sensor_debounce_ms = 60;
+    s->sensor_type = 0;                     /* 0: PIR, 1: HC-SR04 */
+    s->sensor_bottom_echo_gpio = 18;
+    s->sensor_top_echo_gpio = 19;
+    s->ultrasonic_trigger_distance_cm = 80; /* Порог срабатывания по умолчанию 80 см */
+    s->ultrasonic_max_distance_cm = 200;    /* Максимальная дальность 200 см */
 
     /* Internet Time & Astro Schedule */
     s->ntp_enabled = true;
@@ -109,6 +120,9 @@ static void settings_sanitize(staircase_settings_t *s)
     if (s->fixed_on_minute > 59) s->fixed_on_minute = 0;
     if (s->fixed_off_hour > 23) s->fixed_off_hour = 7;
     if (s->fixed_off_minute > 59) s->fixed_off_minute = 0;
+    if (s->sensor_type > 1) s->sensor_type = 0;
+    if (s->ultrasonic_trigger_distance_cm < 10 || s->ultrasonic_trigger_distance_cm > 300) s->ultrasonic_trigger_distance_cm = 80;
+    if (s->ultrasonic_max_distance_cm < 50 || s->ultrasonic_max_distance_cm > 400) s->ultrasonic_max_distance_cm = 200;
 }
 
 void settings_load(staircase_settings_t *s)
