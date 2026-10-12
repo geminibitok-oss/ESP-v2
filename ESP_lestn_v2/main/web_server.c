@@ -42,6 +42,8 @@ esp_err_t web_server_start(staircase_settings_t *settings)
     httpd_uri_t uri_api_trigger = { .uri = "/api/trigger", .method = HTTP_GET, .handler = api_trigger_handler, .user_ctx = NULL };
 
     /* OTA Обновление прошивки */
+    httpd_uri_t uri_ota_page = { .uri = "/update", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_page_alt = { .uri = "/ota", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
     httpd_uri_t uri_ota_post = { .uri = "/api/ota", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
     httpd_uri_t uri_ota_post_update = { .uri = "/update", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
     httpd_uri_t uri_ota_status = { .uri = "/api/ota/status", .method = HTTP_GET, .handler = ota_status_handler, .user_ctx = NULL };
@@ -56,6 +58,8 @@ esp_err_t web_server_start(staircase_settings_t *settings)
     httpd_register_uri_handler(server, &uri_wifi_post);
     httpd_register_uri_handler(server, &uri_api_state);
     httpd_register_uri_handler(server, &uri_api_trigger);
+    httpd_register_uri_handler(server, &uri_ota_page);
+    httpd_register_uri_handler(server, &uri_ota_page_alt);
     httpd_register_uri_handler(server, &uri_ota_post);
     httpd_register_uri_handler(server, &uri_ota_post_update);
     httpd_register_uri_handler(server, &uri_ota_status);

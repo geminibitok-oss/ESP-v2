@@ -20,7 +20,8 @@ import {
   Radar,
   Gauge,
   Activity,
-  AlertCircle
+  AlertCircle,
+  Info
 } from 'lucide-react';
 
 interface DeviceWebInterfaceProps {
@@ -190,6 +191,14 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>ESP32 HTTP Server Online</span>
           </div>
+        </div>
+
+        {/* Browser Header Fields Warning/Tip */}
+        <div className="bg-sky-950/40 border-b border-sky-800/40 px-4 py-2 text-[11px] text-sky-200/90 flex items-center gap-2">
+          <Info className="w-4 h-4 text-sky-400 shrink-0" />
+          <span>
+            <strong>Совет:</strong> Если при открытии <code>192.168.4.1</code> в браузере пишет <em>&quot;header fields are too long&quot;</em> — откройте страницу в режиме <strong>Инкогнито (Ctrl+Shift+N)</strong> или очистите старые куки для 192.168.4.1.
+          </span>
         </div>
 
         {/* Web UI Body */}

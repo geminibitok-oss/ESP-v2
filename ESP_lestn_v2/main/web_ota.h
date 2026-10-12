@@ -8,6 +8,9 @@
 extern "C" {
 #endif
 
+/* Обработчик GET запроса для отображения HTML страницы OTA обновления */
+esp_err_t ota_page_handler(httpd_req_t *req);
+
 /* Обработчик POST запроса для прошивки бинарного файла (.bin) по воздуху (OTA) */
 esp_err_t ota_post_handler(httpd_req_t *req);
 

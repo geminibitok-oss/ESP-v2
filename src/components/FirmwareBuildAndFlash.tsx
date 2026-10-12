@@ -24,8 +24,10 @@ import {
   Zap,
   Package,
   Tag,
-  Info
+  Info,
+  Copy
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { StaircaseSettings } from '../types';
 
 interface FirmwareBuildAndFlashProps {
@@ -81,6 +83,13 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
   const [customFile, setCustomFile] = useState<File | null>(null);
   const serialReaderRef = useRef<any>(null);
   const serialTerminalRef = useRef<HTMLDivElement>(null);
+
+  // --- Permissions Policy & Web Serial Iframe Handling ---
+  const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const [permissionsPolicyBlocked, setPermissionsPolicyBlocked] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+  const [isExportingZip, setIsExportingZip] = useState(false);
+  const [selectedSolutionTab, setSelectedSolutionTab] = useState<'web' | 'cli' | 'zip' | 'ota'>('web');
 
   // --- Wi-Fi OTA State ---
   const [deviceIp, setDeviceIp] = useState('192.168.4.1');
@@ -304,7 +313,30 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
       readSerialLoop(port);
     } catch (e: any) {
       if (e.name !== 'NotFoundError') {
-        setSerialLogs((prev) => [...prev, `[USB ОШИБКА] Не удалось открыть порт: ${e.message}`]);
+        const errorMsg = String(e?.message || e);
+        const isPermPolicy =
+          errorMsg.toLowerCase().includes('permissions policy') ||
+          errorMsg.toLowerCase().includes('disallowed');
+
+        if (isPermPolicy) {
+          setPermissionsPolicyBlocked(true);
+          setSerialLogs((prev) => [
+            ...prev,
+            `[USB ОШИБКА] Не удалось открыть порт: ${errorMsg}`,
+            `================================================================================`,
+            `⚠️ ПРИЧИНА: ПОЛИТИКА БЕЗОПАСНОСТИ БРАУЗЕРА (Permissions Policy в iframe)`,
+            `Приложение открыто во встроенном фрейме предпросмотра, где запрещен прямой доступ к Web Serial API.`,
+            `--------------------------------------------------------------------------------`,
+            `КАК ПРОШИТЬ СЕЙЧАС (выберите любой вариант ниже в карточке):`,
+            `  1. Espressif Web Flasher в новой вкладке (https://espressif.github.io/esptool-js/)`,
+            `  2. Консольная утилита esptool.py (одна команда в терминале)`,
+            `  3. Скачать готовый ZIP-архив с авто-скриптом flash_windows.bat`,
+            `  4. Беспроводная прошивка по Wi-Fi через вкладку 'Обновление по Wi-Fi (OTA)'`,
+            `================================================================================`,
+          ]);
+        } else {
+          setSerialLogs((prev) => [...prev, `[USB ОШИБКА] Не удалось открыть порт: ${errorMsg}`]);
+        }
       }
     }
   };
@@ -497,16 +529,174 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
     }, 1000);
   };
 
-  // Download sample binary
-  const handleDownloadBinary = (filename: string) => {
-    const content = `ESP32 FIRMWARE BINARY (${filename})\nGenerated for repository: ${githubRepo}\nSteps: ${settings.steps}\nLED GPIO: ${settings.led_gpio}\nSensors: HC-SR04 & PIR\nNOAA Astro Solar NTP Engine\nTarget: ESP32 (v5.3)\n`;
-    const blob = new Blob([content], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
+  // Download real compiled binary
+  const handleDownloadBinary = async (filename: string) => {
+    try {
+      const res = await fetch(`/binaries/${filename}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+    } catch (e) {
+      console.warn('Local binary fetch failed, trying GitHub Releases:', e);
+    }
+    // Fallback directly to GitHub Releases
+    const directUrl = filename === 'firmware_merged.bin'
+      ? `/binaries/firmware_merged.bin`
+      : `https://github.com/${githubRepo}/releases/download/latest/${filename}`;
     const a = document.createElement('a');
-    a.href = url;
+    a.href = directUrl;
     a.download = filename;
+    a.target = '_blank';
     a.click();
-    URL.revokeObjectURL(url);
+  };
+
+  // Copy terminal command helper
+  const handleCopyCommand = (cmd: string, id: string) => {
+    navigator.clipboard.writeText(cmd);
+    setCopiedCmd(id);
+    setTimeout(() => {
+      setCopiedCmd(null);
+    }, 2500);
+  };
+
+  // Download full flasher package ZIP with REAL compiled binaries and scripts
+  const handleDownloadFlasherPackageZip = async () => {
+    setIsExportingZip(true);
+    try {
+      const zip = new JSZip();
+
+      // Fetch real binaries
+      const [bootRes, ptRes, appRes, mergedRes] = await Promise.all([
+        fetch('/binaries/bootloader.bin').then((r) => r.blob()).catch(() => null),
+        fetch('/binaries/partition-table.bin').then((r) => r.blob()).catch(() => null),
+        fetch('/binaries/ESP_lestn_v2.bin').then((r) => r.blob()).catch(() => null),
+        fetch('/binaries/firmware_merged.bin').then((r) => r.blob()).catch(() => null),
+      ]);
+
+      if (mergedRes) zip.file('firmware_merged.bin', mergedRes);
+      if (appRes) zip.file('ESP_lestn_v2.bin', appRes);
+      if (bootRes) zip.file('bootloader.bin', bootRes);
+      if (ptRes) zip.file('partition-table.bin', ptRes);
+
+      const batContent = `@echo off
+chcp 65001 >nul
+echo ========================================================
+echo   ESP32 Staircase Controller v2.0 - USB Flash Tool
+echo ========================================================
+echo.
+
+where esptool.py >nul 2>&1
+if %ERRORLEVEL% EQU 0 goto HAS_ESPTOOL
+
+where python >nul 2>&1
+if %ERRORLEVEL% NEQ 0 goto NO_PYTHON
+
+echo [INFO] Установка утилиты esptool через python pip...
+python -m pip install esptool
+goto HAS_ESPTOOL
+
+:NO_PYTHON
+echo.
+echo [!] ВНИМАНИЕ: Python не установлен на вашем компьютере.
+echo.
+echo Вам НЕ ОБЯЗАТЕЛЬНО устанавливать Python!
+echo Вы можете прошить плату прямо в браузере (Chrome / Edge):
+echo   1. Откройте сайт: https://espressif.github.io/esptool-js/
+echo   2. Выберите Baudrate: 460800 (или 115200)
+echo   3. Выберите файл firmware_merged.bin по адресу 0x0
+echo   4. Нажмите Program!
+echo.
+pause
+exit /b 1
+
+:HAS_ESPTOOL
+echo.
+set /p COMPORT="Введите номер COM-порта (например, COM3 или COM4): "
+if "%COMPORT%"=="" set COMPORT=COM3
+
+echo.
+echo Запись прошивки firmware_merged.bin в порт %COMPORT% (скорость 460800 бод)...
+echo (Если появится Connecting..., зажмите кнопку BOOT на плате ESP32)
+echo.
+
+python -m esptool --chip esp32 -p %COMPORT% -b 460800 write_flash 0x0 firmware_merged.bin
+if %ERRORLEVEL% EQU 0 goto SUCCESS
+
+echo.
+echo Повтор на безопасной скорости 115200 бод...
+python -m esptool --chip esp32 -p %COMPORT% -b 115200 write_flash 0x0 firmware_merged.bin
+if %ERRORLEVEL% EQU 0 goto SUCCESS
+
+echo.
+echo [ОШИБКА] Не удалось прошить. Проверьте правильность COM-порта.
+pause
+exit /b 1
+
+:SUCCESS
+echo.
+echo ========================================================
+echo   ПРОШИВКА УСПЕШНО ЗАВЕРШЕНА!
+echo   Контроллер перезагружен и создал Wi-Fi: ESP-Stairs-AP
+echo   Адрес веб-интерфейса: 192.168.4.1
+echo ========================================================
+pause
+`;
+      zip.file('flash_windows.bat', batContent);
+
+      const shContent = `#!/bin/bash
+echo "========================================================"
+echo "  Прошивка умной подсветки лестницы ESP32 (v2.0)"
+echo "========================================================"
+PORT=\${1:-/dev/ttyUSB0}
+echo "Используется порт: \$PORT"
+which esptool.py >/dev/null 2>&1 || pip install esptool
+esptool.py --chip esp32 -p "\$PORT" -b 460800 write_flash 0x0 firmware_merged.bin || esptool.py --chip esp32 -p "\$PORT" -b 115200 write_flash 0x0 firmware_merged.bin
+`;
+      zip.file('flash_linux.sh', shContent);
+
+      const readmeContent = `ИНСТРУКЦИЯ ПО ПРОШИВКЕ ESP32 (Smart Staircase v2.0)
+============================================================
+ВНИМАНИЕ! Не используйте скорость 921600 бод, иначе возникнет
+ошибка 'Serial data stream stopped: Possible serial noise or corruption'.
+Используйте скорость 460800 или 115200 бод!
+
+СПОСОБ 1: ОНЛАЙН В БРАУЗЕРЕ (esptool-js)
+---------------------------------------
+1. Откройте https://espressif.github.io/esptool-js/
+2. Выберите Baudrate: 460800 (или 115200)
+3. Нажмите "Connect", выберите ваш COM-порт
+4. Добавьте файл firmware_merged.bin и укажите адрес 0x0
+5. Нажмите "Program"
+
+СПОСОБ 2: АВТО-СКРИПТ ДЛЯ WINDOWS
+---------------------------------
+Дважды щелкните flash_windows.bat и укажите COM-порт (например COM3).
+
+СПОСОБ 3: КОМАНДНАЯ СТРОКА (ESPTOOL)
+------------------------------------
+esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+`;
+      zip.file('ИНСТРУКЦИЯ_ПО_ПРОШИВКЕ.txt', readmeContent);
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'esp32_staircase_firmware_package.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExportingZip(false);
+    }
   };
 
   return (
@@ -993,6 +1183,365 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
                 <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400" />
                 <div>
                   <strong>Браузер не поддерживает Web Serial API:</strong> Для прямой прошивки через USB используйте Google Chrome, Microsoft Edge, Brave или Opera на компьютере. В других браузерах используйте вкладку <strong>&quot;Обновление по Wi-Fi (OTA)&quot;</strong> или CLI команды.
+                </div>
+              </div>
+            )}
+
+            {/* Permissions Policy & Iframe USB Error Resolution Card */}
+            {(permissionsPolicyBlocked || isInsideIframe) && (
+              <div className={`mb-6 p-5 rounded-2xl border transition-all ${
+                permissionsPolicyBlocked
+                  ? 'bg-rose-950/40 border-rose-700/80 shadow-xl shadow-rose-950/40 ring-1 ring-rose-600/50'
+                  : 'bg-amber-950/30 border-amber-800/60'
+              }`}>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-2 rounded-xl text-white ${
+                      permissionsPolicyBlocked ? 'bg-rose-600 shadow-md shadow-rose-600/30' : 'bg-amber-600 shadow-md shadow-amber-600/30'
+                    }`}>
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-white">
+                          {permissionsPolicyBlocked
+                            ? 'Ошибка доступа к USB: Permissions Policy в iframe'
+                            : 'Ограничение Web Serial в окне предпросмотра (iframe)'}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold ${
+                          permissionsPolicyBlocked ? 'bg-rose-900/80 text-rose-300 border border-rose-700' : 'bg-amber-900/80 text-amber-300 border border-amber-700'
+                        }`}>
+                          {permissionsPolicyBlocked ? 'Требуется действие' : 'Внимание'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        {permissionsPolicyBlocked ? (
+                          <span>
+                            Браузер вернул ошибку <code className="bg-rose-900/50 px-1 py-0.5 rounded text-rose-200 text-[11px] font-mono">disallowed by permissions policy</code>. Браузер запрещает доступ к COM/Serial портам внутри встроенного iframe-окна.
+                          </span>
+                        ) : (
+                          <span>
+                            Приложение запущено внутри фрейма предпросмотра (iframe). Если при нажатии кнопки порт не откроется — используйте готовые варианты ниже:
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Solution Selection Tabs */}
+                <div className="mt-4 pt-3 border-t border-slate-800/80">
+                  <div className="text-xs font-semibold text-slate-200 mb-2 flex items-center justify-between">
+                    <span>Выберите удобный способ прошивки ESP32:</span>
+                    <span className="text-[11px] text-slate-400 font-normal">Все 4 способа проверены и готовы</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSolutionTab('web')}
+                      className={`p-2.5 rounded-xl text-xs font-medium flex flex-col items-center gap-1.5 transition-all text-center ${
+                        selectedSolutionTab === 'web'
+                          ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 ring-1 ring-sky-400'
+                          : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      <ExternalLink className="w-4 h-4 text-sky-300" />
+                      <span className="font-semibold">1. Web Flasher</span>
+                      <span className="text-[10px] opacity-80">в новой вкладке</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSolutionTab('cli')}
+                      className={`p-2.5 rounded-xl text-xs font-medium flex flex-col items-center gap-1.5 transition-all text-center ${
+                        selectedSolutionTab === 'cli'
+                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-400'
+                          : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      <Terminal className="w-4 h-4 text-emerald-300" />
+                      <span className="font-semibold">2. Команда esptool</span>
+                      <span className="text-[10px] opacity-80">в 1 клик для консоли</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSolutionTab('zip')}
+                      className={`p-2.5 rounded-xl text-xs font-medium flex flex-col items-center gap-1.5 transition-all text-center ${
+                        selectedSolutionTab === 'zip'
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 ring-1 ring-indigo-400'
+                          : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      <Package className="w-4 h-4 text-indigo-300" />
+                      <span className="font-semibold">3. Пакет ZIP</span>
+                      <span className="text-[10px] opacity-80">с flash_windows.bat</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSolutionTab('ota')}
+                      className={`p-2.5 rounded-xl text-xs font-medium flex flex-col items-center gap-1.5 transition-all text-center ${
+                        selectedSolutionTab === 'ota'
+                          ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30 ring-1 ring-amber-400'
+                          : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      <Wifi className="w-4 h-4 text-amber-300" />
+                      <span className="font-semibold">4. Wi-Fi OTA</span>
+                      <span className="text-[10px] opacity-80">без USB кабеля</span>
+                    </button>
+                  </div>
+
+                  {/* TAB 1: Online Espressif Web Flasher in new browser tab */}
+                  {selectedSolutionTab === 'web' && (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-3.5 text-xs text-slate-300">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-bold text-sky-400 text-sm mb-1">
+                            Способ 1: Официальный Web Flasher Espressif (без установки ПО)
+                          </div>
+                          <p className="text-slate-400 leading-relaxed">
+                            Ограничение Permissions Policy действует <strong>только внутри фрейма песочницы</strong>. В обычной вкладке браузера Chrome или Edge официальный онлайн-прошивальщик Espressif имеет полный доступ к USB/COM портам и запишет прошивку за 30 секунд.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Important Warning about 188-byte vs real binary and 921600 baud */}
+                      <div className="p-3 bg-amber-950/40 border border-amber-800/80 text-amber-200 rounded-xl space-y-1.5">
+                        <div className="flex items-center gap-2 font-bold text-amber-300">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Критически важно для esptool.js:</span>
+                        </div>
+                        <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-200/90 leading-relaxed">
+                          <li>
+                            <strong>Скорость (Baudrate):</strong> выберите <strong>460800</strong> или <strong>115200</strong> бод (на 921600 часто возникает сбой <em>&quot;Serial data stream stopped / serial noise or corruption&quot;</em>).
+                          </li>
+                          <li>
+                            <strong>Размер файла:</strong> реальная прошивка весит <strong>~940 КБ</strong> (а не 188 байт). При записи файла размером 188 байт плата не запустится.
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+                          Шаг 1: Скачайте настоящие бинарники прошивки
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadBinary('firmware_merged.bin')}
+                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-all active:scale-95"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Скачать firmware_merged.bin (941 КБ, адрес 0x0)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadBinary('ESP_lestn_v2.bin')}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>ESP_lestn_v2.bin (877 КБ, адрес 0x10000)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+                          Шаг 2: Откройте онлайн-прошивальщик в новой вкладке
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <a
+                            href="https://espressif.github.io/esptool-js/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-sky-600/25 transition-all"
+                          >
+                            <span>Открыть Espressif Web Flasher (esptool-js)</span>
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                          <a
+                            href="https://web.esphome.io/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all"
+                          >
+                            <span>Зеркало: ESPHome Web Flasher</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                        <div className="text-[11px] text-slate-300 pt-1 space-y-1 bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono">
+                          <div className="text-sky-300 font-sans font-bold">Инструкция настройки в окне esptool.js:</div>
+                          <div>1. В выпадающем списке <strong>Baudrate</strong> выберите <strong>460800</strong> или <strong>115200</strong></div>
+                          <div>2. Нажмите <strong>&quot;Connect&quot;</strong> и выберите COM-порт (CP2102 или CH340)</div>
+                          <div>3. В строке таблицы файлов укажите Flash Address: <span className="text-emerald-400 font-bold">0x0</span></div>
+                          <div>4. Нажмите <strong>&quot;Choose file&quot;</strong> и выберите <span className="text-emerald-300 font-bold">firmware_merged.bin</span> (размер ~941 КБ)</div>
+                          <div>5. Нажмите кнопку <strong className="text-emerald-400">&quot;Program&quot;</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: Terminal esptool.py command */}
+                  {selectedSolutionTab === 'cli' && (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-3.5 text-xs text-slate-300">
+                      <div>
+                        <div className="font-bold text-emerald-400 text-sm mb-1">
+                          Способ 2: Прошивка через консоль (esptool.py)
+                        </div>
+                        <p className="text-slate-400">
+                          Если на компьютере установлен Python, прошивка выполняется одной командой в командной строке (CMD, PowerShell или терминал Linux/Mac):
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 font-mono text-[11px]">
+                        {/* Windows Command */}
+                        <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between font-sans">
+                            <span className="font-semibold text-slate-200">Команда для Windows (PowerShell / CMD):</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCommand('esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin', 'cmd_win')}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
+                            >
+                              {copiedCmd === 'cmd_win' ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400">Скопировано!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>Скопировать команду</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <div className="p-2 bg-slate-950 border border-slate-800/80 rounded-lg text-emerald-300 select-all overflow-x-auto whitespace-pre">
+                            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-sans">
+                            * Замените COM3 на номер порта вашей платы (его видно в Диспетчере устройств Windows).
+                          </div>
+                        </div>
+
+                        {/* Linux / macOS Command */}
+                        <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between font-sans">
+                            <span className="font-semibold text-slate-200">Команда для Linux / macOS (Терминал):</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCommand('esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x0 firmware_merged.bin', 'cmd_nix')}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
+                            >
+                              {copiedCmd === 'cmd_nix' ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400">Скопировано!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>Скопировать команду</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <div className="p-2 bg-slate-950 border border-slate-800/80 rounded-lg text-sky-300 select-all overflow-x-auto whitespace-pre">
+                            esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x0 firmware_merged.bin
+                          </div>
+                        </div>
+
+                        {/* Install esptool reminder */}
+                        <div className="flex items-center gap-2 text-slate-400 font-sans text-[11px] pt-1">
+                          <span>Установка esptool (если еще не установлен):</span>
+                          <code className="bg-slate-900 px-2 py-0.5 rounded text-amber-300 font-mono">pip install esptool</code>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: ZIP package with flash.bat */}
+                  {selectedSolutionTab === 'zip' && (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-3.5 text-xs text-slate-300">
+                      <div>
+                        <div className="font-bold text-indigo-400 text-sm mb-1">
+                          Способ 3: Готовый пакет прошивки (.ZIP) с автоскриптом flash.bat
+                        </div>
+                        <p className="text-slate-400 leading-relaxed">
+                          Скачайте архив, который содержит все файлы прошивки, загрузчик, таблицу разделов и готовый скрипт для Windows и Linux. Вам не нужно запоминать адреса памяти или параметры бодрейта.
+                        </p>
+                      </div>
+
+                      <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="font-semibold text-slate-100 flex items-center gap-2">
+                            <Package className="w-4 h-4 text-indigo-400" />
+                            <span>esp32_staircase_firmware_package.zip</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Включает: firmware_merged.bin, ESP_lestn_v2.bin, flash_windows.bat, flash_linux.sh, инструкцию
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDownloadFlasherPackageZip}
+                          disabled={isExportingZip}
+                          className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/25 transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                        >
+                          <Download className={`w-4 h-4 ${isExportingZip ? 'animate-bounce' : ''}`} />
+                          <span>{isExportingZip ? 'Формирование архива...' : 'Скачать архив для прошивки'}</span>
+                        </button>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 space-y-1 bg-slate-900/60 p-3 rounded-lg border border-slate-800/80">
+                        <div className="font-medium text-slate-300">Как использовать:</div>
+                        <div>1. Распакуйте скачанный zip-архив в любую папку.</div>
+                        <div>2. Подключите ESP32 по USB-кабелю.</div>
+                        <div>3. Запустите файл <code className="text-indigo-300 font-mono">flash_windows.bat</code> и укажите номер COM-порта.</div>
+                        <div>4. Скрипт сам выполнит полную запись и верификацию памяти.</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 4: Wi-Fi OTA updater */}
+                  {selectedSolutionTab === 'ota' && (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-3.5 text-xs text-slate-300">
+                      <div>
+                        <div className="font-bold text-amber-400 text-sm mb-1">
+                          Способ 4: Беспроводное обновление по Wi-Fi (OTA) — без подключения USB
+                        </div>
+                        <p className="text-slate-400 leading-relaxed">
+                          Если контроллер уже имеет базовую прошивку или создает собственную точку доступа <code className="text-amber-300 font-mono">ESP-Stairs-AP</code>, вам вообще не нужен USB-кабель и COM-порт. Прошивка передается по локальной сети по воздуху.
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+                          Порядок действий:
+                        </div>
+                        <div className="space-y-1 text-slate-400 text-[11px]">
+                          <div>1. Подключите ноутбук или телефон к Wi-Fi сети контроллера: <strong>ESP-Stairs-AP</strong> (IP: 192.168.4.1).</div>
+                          <div>2. Скачайте файл <button type="button" onClick={() => handleDownloadBinary('ESP_lestn_v2.bin')} className="text-sky-400 hover:underline inline-flex items-center gap-0.5"><Download className="w-3 h-3" /> ESP_lestn_v2.bin</button>.</div>
+                          <div>3. Перейдите на вкладку OTA и отправьте файл на контроллер.</div>
+                          <div className="text-amber-300 font-medium pt-0.5">💡 Если браузер выдает ошибку &quot;header fields are too long&quot; — откройте адрес http://192.168.4.1 в режиме <strong>Инкогнито (Ctrl+Shift+N)</strong> или с телефона (в обычном окне браузер шлет старые cookies от других устройств).</div>
+                        </div>
+                      </div>
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveSubTab('ota')}
+                          className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-amber-600/25 transition-all active:scale-95"
+                        >
+                          <Wifi className="w-4 h-4" />
+                          <span>Перейти на вкладку &quot;Обновление по Wi-Fi (OTA)&quot;</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

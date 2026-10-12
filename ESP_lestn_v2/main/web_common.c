@@ -137,6 +137,7 @@ esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
         "<a href='/'>Главная</a>"
         "<a href='/settings'>Настройки</a>"
         "<a href='/wifi'>Wi-Fi</a>"
+        "<a href='/update'>OTA Обновление</a>"
         "</div>"
     );
     return ESP_OK;
