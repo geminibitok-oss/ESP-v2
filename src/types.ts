@@ -91,3 +91,23 @@ export interface SourceFile {
   description: string;
   code: string;
 }
+
+export interface GitHubReleaseAsset {
+  id: number;
+  name: string;
+  size: number;
+  browser_download_url: string;
+  content_type?: string;
+}
+
+export interface GitHubRelease {
+  id: number;
+  tag_name: string;
+  name: string;
+  body: string;
+  created_at: string;
+  published_at: string;
+  prerelease: boolean;
+  html_url: string;
+  assets: GitHubReleaseAsset[];
+}

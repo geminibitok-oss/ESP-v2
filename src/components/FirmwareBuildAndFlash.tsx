@@ -26,7 +26,8 @@ import {
   Tag,
   Info,
   Copy
-} from 'lucide-react';
+, ChevronDown, Sparkles, Server } from 'lucide-react';
+import { GitHubRelease } from '../types';
 import JSZip from 'jszip';
 import { StaircaseSettings } from '../types';
 
@@ -108,14 +109,94 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
   const [otaSuccess, setOtaSuccess] = useState(false);
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
 
+  // --- GitHub Releases & Version Checker State ---
+  const [releases, setReleases] = useState<GitHubRelease[]>([]);
+  const [isLoadingReleases, setIsLoadingReleases] = useState(false);
+  const [selectedReleaseTag, setSelectedReleaseTag] = useState<string>('latest');
+  const [releaseCheckError, setReleaseCheckError] = useState<string | null>(null);
+  const [isPruningReleases, setIsPruningReleases] = useState(false);
+  const [pruneResult, setPruneResult] = useState<string | null>(null);
+  const currentFwVersion = otaDeviceInfo?.version || 'v2.0.0';
+
   useEffect(() => {
     // Check Web Serial API support
     if (typeof navigator !== 'undefined' && 'serial' in navigator) {
       setIsSerialSupported(true);
     }
-    // Fetch GitHub workflow runs
+    // Fetch GitHub workflow runs and releases
     fetchWorkflowRuns();
+    fetchGitHubReleases();
   }, []);
+
+  // Fetch GitHub Releases list
+  const fetchGitHubReleases = async () => {
+    setIsLoadingReleases(true);
+    setReleaseCheckError(null);
+    try {
+      const headers: Record<string, string> = {
+        Accept: 'application/vnd.github.v3+json',
+      };
+      if (githubToken) {
+        headers['Authorization'] = `token ${githubToken}`;
+      }
+      const res = await fetch(`https://api.github.com/repos/${githubRepo}/releases?per_page=30`, {
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReleases(data || []);
+        if (data && data.length > 0 && !selectedReleaseTag) {
+          setSelectedReleaseTag(data[0].tag_name);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setReleaseCheckError(err.message || `Ошибка HTTP ${res.status}`);
+      }
+    } catch (e: any) {
+      setReleaseCheckError(e.message || 'Сетевая ошибка при получении релизов');
+    } finally {
+      setIsLoadingReleases(false);
+    }
+  };
+
+  // Prune releases older than 10 directly from UI via token
+  const handlePruneReleases = async () => {
+    if (!githubToken) {
+      setPruneResult('Для удаления старых релизов укажите Personal Access Token с правами repo/releases!');
+      return;
+    }
+    if (releases.length <= 10) {
+      setPruneResult(`Релизов всего ${releases.length} (не более 10). Затирать нечего!`);
+      return;
+    }
+    setIsPruningReleases(true);
+    setPruneResult(null);
+    try {
+      const sorted = [...releases].sort((a, b) => {
+        const da = new Date(a.published_at || a.created_at).getTime();
+        const db = new Date(b.published_at || b.created_at).getTime();
+        return db - da;
+      });
+      const toDelete = sorted.slice(10);
+      let count = 0;
+      for (const rel of toDelete) {
+        const delRes = await fetch(`https://api.github.com/repos/${githubRepo}/releases/${rel.id}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `token ${githubToken}`,
+            Accept: 'application/vnd.github.v3+json',
+          },
+        });
+        if (delRes.ok) count++;
+      }
+      setPruneResult(`Успешно удалено ${count} старых релизов. Оставлено 10 самых свежих.`);
+      await fetchGitHubReleases();
+    } catch (e: any) {
+      setPruneResult(`Ошибка при ротации: ${e.message}`);
+    } finally {
+      setIsPruningReleases(false);
+    }
+  };
 
   // Save GitHub token in localStorage
   const handleSaveToken = (val: string) => {
@@ -476,8 +557,9 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
     }
   };
 
-  // Start OTA upload over Wi-Fi
-  const startOtaUpload = () => {
+  // Start OTA upload over Wi-Fi (supports release version)
+  const startOtaUpload = (releaseTag?: string) => {
+    const targetTag = releaseTag || selectedReleaseTag || 'latest';
     setIsFlashingOta(true);
     setOtaProgress(0);
     setOtaSuccess(false);
@@ -503,12 +585,13 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
         clearInterval(interval);
         setIsFlashingOta(false);
         setOtaSuccess(true);
-        startRebootCountdown();
+        startRebootCountdown(targetTag);
       }
     }, 700);
   };
 
-  const startRebootCountdown = () => {
+  const startRebootCountdown = (targetVer?: string) => {
+    const targetVersionName = targetVer || (selectedReleaseTag.startsWith('v') ? selectedReleaseTag : (selectedReleaseTag === 'latest' ? 'v2.0.1 (Latest)' : selectedReleaseTag));
     let count = 8;
     setRebootCountdown(count);
     const timer = setInterval(() => {
@@ -521,6 +604,7 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
             ...otaDeviceInfo,
             runningPartition: 'ota_1 (0x200000)',
             nextPartition: 'ota_0 (0x20000)',
+            version: targetVersionName,
           });
         }
       } else {
@@ -529,8 +613,9 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
     }, 1000);
   };
 
-  // Download real compiled binary
-  const handleDownloadBinary = async (filename: string) => {
+  // Download real compiled binary (optionally from specific release)
+  const handleDownloadBinary = async (filename: string, tag?: string) => {
+    const targetTag = tag || selectedReleaseTag || 'latest';
     try {
       const res = await fetch(`/binaries/${filename}`);
       if (res.ok) {
@@ -547,9 +632,9 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
       console.warn('Local binary fetch failed, trying GitHub Releases:', e);
     }
     // Fallback directly to GitHub Releases
-    const directUrl = filename === 'firmware_merged.bin'
+    const directUrl = targetTag === 'latest' && filename === 'firmware_merged.bin'
       ? `/binaries/firmware_merged.bin`
-      : `https://github.com/${githubRepo}/releases/download/latest/${filename}`;
+      : `https://github.com/${githubRepo}/releases/download/${targetTag}/${filename}`;
     const a = document.createElement('a');
     a.href = directUrl;
     a.download = filename;
@@ -1324,27 +1409,73 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                         </ul>
                       </div>
 
-                      <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
-                        <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
-                          Шаг 1: Скачайте настоящие бинарники прошивки
+                      <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+                            Шаг 1: Скачайте файлы прошивки
+                          </div>
+                          <a
+                            href={`https://github.com/${githubRepo}/releases/latest`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium"
+                          >
+                            <Github className="w-3.5 h-3.5" />
+                            <span>Открыть страницу GitHub Releases</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadBinary('firmware_merged.bin')}
-                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-all active:scale-95"
-                          >
-                            <Download className="w-4 h-4" />
-                            <span>Скачать firmware_merged.bin (941 КБ, адрес 0x0)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadBinary('ESP_lestn_v2.bin')}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>ESP_lestn_v2.bin (877 КБ, адрес 0x10000)</span>
-                          </button>
+
+                        {/* Variant 1 Downloads */}
+                        <div className="space-y-1.5 p-2.5 bg-slate-950/70 rounded-lg border border-slate-800">
+                          <div className="text-[11px] font-medium text-emerald-400 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            <span>Вариант 1 (В 1 клик, объединенный образ для адреса 0x0):</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBinary('firmware_merged.bin')}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-all active:scale-95"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Скачать firmware_merged.bin (941 КБ)</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Variant 2 Downloads */}
+                        <div className="space-y-1.5 p-2.5 bg-slate-950/70 rounded-lg border border-slate-800">
+                          <div className="text-[11px] font-medium text-sky-400 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                            <span>Вариант 2. Раздельная прошивка (3 файла прямо со страницы GitHub Releases):</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBinary('bootloader.bin')}
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>1. bootloader.bin (26 КБ, 0x1000)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBinary('partition-table.bin')}
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>2. partition-table.bin (3 КБ, 0x8000)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBinary('ESP_lestn_v2.bin')}
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>3. ESP_lestn_v2.bin (877 КБ, 0x10000)</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -1372,13 +1503,40 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         </div>
-                        <div className="text-[11px] text-slate-300 pt-1 space-y-1 bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono">
-                          <div className="text-sky-300 font-sans font-bold">Инструкция настройки в окне esptool.js:</div>
-                          <div>1. В выпадающем списке <strong>Baudrate</strong> выберите <strong>460800</strong> или <strong>115200</strong></div>
-                          <div>2. Нажмите <strong>&quot;Connect&quot;</strong> и выберите COM-порт (CP2102 или CH340)</div>
-                          <div>3. В строке таблицы файлов укажите Flash Address: <span className="text-emerald-400 font-bold">0x0</span></div>
-                          <div>4. Нажмите <strong>&quot;Choose file&quot;</strong> и выберите <span className="text-emerald-300 font-bold">firmware_merged.bin</span> (размер ~941 КБ)</div>
-                          <div>5. Нажмите кнопку <strong className="text-emerald-400">&quot;Program&quot;</strong></div>
+
+                        <div className="text-[11px] text-slate-300 pt-2 space-y-3 bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono">
+                          <div className="text-sky-300 font-sans font-bold flex items-center gap-1.5">
+                            <Layers className="w-4 h-4 text-sky-400" />
+                            <span>Инструкция настройки в окне esptool.js:</span>
+                          </div>
+
+                          <div className="text-xs text-slate-400 space-y-1">
+                            <div>1. <strong>Baudrate</strong>: выберите <span className="text-emerald-400 font-bold">460800</span> или 115200 (не 921600).</div>
+                            <div>2. Нажмите <strong>&quot;Connect&quot;</strong> и выберите COM-порт (удерживайте BOOT если не отвечает).</div>
+                          </div>
+
+                          {/* Options in flasher */}
+                          <div className="border-t border-slate-800 pt-2 space-y-2">
+                            <div className="text-emerald-400 font-sans font-semibold text-xs">
+                              Вариант 1 (Единый файл):
+                            </div>
+                            <div className="pl-2 border-l-2 border-emerald-500/50 space-y-1 text-slate-300">
+                              <div>Flash Address: <span className="text-emerald-400 font-bold">0x0</span> ➔ выберите <span className="text-emerald-300">firmware_merged.bin</span></div>
+                            </div>
+
+                            <div className="text-sky-400 font-sans font-semibold text-xs pt-1">
+                              Вариант 2. Раздельная прошивка (3 файла прямо из GitHub Releases):
+                            </div>
+                            <div className="pl-2 border-l-2 border-sky-500/50 space-y-1 text-slate-300">
+                              <div>• Строка 1: Flash Address: <span className="text-sky-400 font-bold">0x1000</span> ➔ файл <span className="text-sky-300">bootloader.bin</span></div>
+                              <div>• Строка 2: Flash Address: <span className="text-sky-400 font-bold">0x8000</span> ➔ файл <span className="text-sky-300">partition-table.bin</span></div>
+                              <div>• Строка 3: Flash Address: <span className="text-sky-400 font-bold">0x10000</span> ➔ файл <span className="text-sky-300">ESP_lestn_v2.bin</span></div>
+                            </div>
+
+                            <div className="text-slate-400 pt-1 text-[10px]">
+                              3. Нажмите кнопку <strong className="text-emerald-400">&quot;Program&quot;</strong>, дождитесь 100% и нажмите кнопку <strong>RESET</strong> на ESP32.
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1396,17 +1554,17 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                         </p>
                       </div>
 
-                      <div className="space-y-3 font-mono text-[11px]">
-                        {/* Windows Command */}
+                      <div className="space-y-4 font-mono text-[11px]">
+                        {/* Variant 1: Merged */}
                         <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
                           <div className="flex items-center justify-between font-sans">
-                            <span className="font-semibold text-slate-200">Команда для Windows (PowerShell / CMD):</span>
+                            <span className="font-semibold text-emerald-300">Вариант 1: Единый файл (0x0 firmware_merged.bin):</span>
                             <button
                               type="button"
-                              onClick={() => handleCopyCommand('esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin', 'cmd_win')}
+                              onClick={() => handleCopyCommand('esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin', 'cmd_merged_win')}
                               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
                             >
-                              {copiedCmd === 'cmd_win' ? (
+                              {copiedCmd === 'cmd_merged_win' ? (
                                 <>
                                   <Check className="w-3.5 h-3.5 text-emerald-400" />
                                   <span className="text-emerald-400">Скопировано!</span>
@@ -1414,7 +1572,7 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                               ) : (
                                 <>
                                   <Copy className="w-3.5 h-3.5" />
-                                  <span>Скопировать команду</span>
+                                  <span>Скопировать (Windows)</span>
                                 </>
                               )}
                             </button>
@@ -1422,35 +1580,59 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                           <div className="p-2 bg-slate-950 border border-slate-800/80 rounded-lg text-emerald-300 select-all overflow-x-auto whitespace-pre">
                             esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                           </div>
-                          <div className="text-[10px] text-slate-500 font-sans">
-                            * Замените COM3 на номер порта вашей платы (его видно в Диспетчере устройств Windows).
-                          </div>
                         </div>
 
-                        {/* Linux / macOS Command */}
-                        <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                        {/* Variant 2: 3 separate files from GitHub Releases */}
+                        <div className="p-3 bg-slate-900 border border-sky-900/60 rounded-xl space-y-2">
                           <div className="flex items-center justify-between font-sans">
-                            <span className="font-semibold text-slate-200">Команда для Linux / macOS (Терминал):</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyCommand('esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x0 firmware_merged.bin', 'cmd_nix')}
-                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
-                            >
-                              {copiedCmd === 'cmd_nix' ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="text-emerald-400">Скопировано!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5" />
-                                  <span>Скопировать команду</span>
-                                </>
-                              )}
-                            </button>
+                            <div>
+                              <span className="font-semibold text-sky-300">Вариант 2. Раздельная прошивка (3 файла прямо со страницы GitHub Releases):</span>
+                              <div className="text-[10px] text-slate-400 font-sans">
+                                (bootloader.bin @ 0x1000, partition-table.bin @ 0x8000, ESP_lestn_v2.bin @ 0x10000)
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCommand('esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin', 'cmd_v2_win')}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
+                              >
+                                {copiedCmd === 'cmd_v2_win' ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-emerald-400">Скопировано!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Команда Windows</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCommand('esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin', 'cmd_v2_nix')}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-sans flex items-center gap-1.5 transition-colors"
+                              >
+                                {copiedCmd === 'cmd_v2_nix' ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-emerald-400">Скопировано!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Linux / Mac</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                           <div className="p-2 bg-slate-950 border border-slate-800/80 rounded-lg text-sky-300 select-all overflow-x-auto whitespace-pre">
-                            esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x0 firmware_merged.bin
+                            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-sans">
+                            * Положите bootloader.bin, partition-table.bin и ESP_lestn_v2.bin в одну папку и запустите терминал в этой папке.
                           </div>
                         </div>
 
@@ -1767,6 +1949,205 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
               )}
             </div>
 
+            {/* GITHUB RELEASES VERSION SELECTOR & CHECKER */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-sky-950 text-sky-400 border border-sky-800 rounded-lg">
+                    <Github className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                      <span>Обновление из GitHub Releases</span>
+                      <span className="text-[10px] font-normal bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded-full font-mono">
+                        {releases.length > 0 ? `${releases.length} релизов найдено` : 'Релизы GitHub'}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Автоматическая проверка новых версий и выбор любого релиза для установки по Wi-Fi OTA
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchGitHubReleases}
+                    disabled={isLoadingReleases}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReleases ? 'animate-spin' : ''}`} />
+                    <span>{isLoadingReleases ? 'Проверка...' : 'Проверить обновления'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePruneReleases}
+                    disabled={isPruningReleases}
+                    title="Затереть старые релизы на GitHub (оставить только 10 последних)"
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-red-950/40 border border-slate-700 hover:border-red-800 text-slate-300 hover:text-red-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${isPruningReleases ? 'animate-spin text-red-400' : 'text-slate-400'}`} />
+                    <span>Ротация (max 10)</span>
+                  </button>
+                </div>
+              </div>
+
+              {pruneResult && (
+                <div className="p-3 bg-slate-900 border border-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-2">
+                  <Info className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>{pruneResult}</span>
+                </div>
+              )}
+
+              {releaseCheckError && (
+                <div className="p-3 bg-amber-950/50 border border-amber-800 text-amber-300 rounded-lg text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{releaseCheckError}</span>
+                </div>
+              )}
+
+              {/* Version Comparison Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs">
+                <div>
+                  <div className="text-slate-400 text-[11px]">Текущая версия на ESP32:</div>
+                  <div className="font-mono font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>{currentFwVersion}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-slate-400 text-[11px]">Выбранная версия для установки:</div>
+                  <div className="font-mono font-bold text-sky-400 mt-0.5 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>{selectedReleaseTag}</span>
+                    {selectedReleaseTag === 'latest' && (
+                      <span className="text-[10px] bg-sky-950 text-sky-300 px-1.5 py-0.2 rounded border border-sky-800">Свежая</span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-slate-400 text-[11px]">Статус проверки версий:</div>
+                  <div className="mt-0.5 font-medium flex items-center gap-1">
+                    {releases.length > 0 && releases[0].tag_name !== currentFwVersion ? (
+                      <span className="text-emerald-400 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" /> Доступно обновление ({releases[0].tag_name})!
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> У вас актуальная версия
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Release Picker & Actions */}
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Выберите какую версию установить на ESP32:
+                </label>
+
+                {releases.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                      {releases.map((rel) => {
+                        const isSelected = selectedReleaseTag === rel.tag_name;
+                        const isLatest = rel.tag_name === 'latest';
+                        const pubDate = new Date(rel.published_at || rel.created_at).toLocaleDateString('ru-RU', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        });
+
+                        return (
+                          <div
+                            key={rel.id}
+                            onClick={() => setSelectedReleaseTag(rel.tag_name)}
+                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-sky-950/70 border-sky-500 text-sky-100 shadow-lg shadow-sky-900/20 ring-1 ring-sky-500'
+                                : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-mono font-bold text-sky-300 flex items-center gap-1.5">
+                                <Tag className="w-3 h-3 text-sky-400" />
+                                {rel.tag_name}
+                              </span>
+                              {isLatest && (
+                                <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.2 rounded font-mono font-semibold">
+                                  LATEST
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 line-clamp-1">
+                              {rel.name || rel.tag_name}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
+                              <span>{pubDate}</span>
+                              <span className="text-slate-400">{rel.assets?.length || 0} файлов</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-400 flex items-center justify-between">
+                    <span>
+                      {isLoadingReleases
+                        ? 'Загрузка списка версий из репозитория GitHub...'
+                        : 'В репозитории доступен релиз по умолчанию (latest).'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={fetchGitHubReleases}
+                      className="text-sky-400 hover:underline font-semibold"
+                    >
+                      Обновить список
+                    </button>
+                  </div>
+                )}
+
+                {/* Selected Release Action Bar */}
+                <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                      <span>Установка версии:</span>
+                      <span className="font-mono text-sky-400 font-bold">{selectedReleaseTag}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Будет прошит <span className="font-mono text-slate-300">ESP_lestn_v2.bin</span> из релиза <span className="font-mono text-slate-300">{selectedReleaseTag}</span> в пассивный OTA-раздел
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadBinary('ESP_lestn_v2.bin', selectedReleaseTag)}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Скачать .bin</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => startOtaUpload(selectedReleaseTag)}
+                      disabled={isFlashingOta}
+                      className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/30 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <Zap className={`w-4 h-4 ${isFlashingOta ? 'animate-bounce' : ''}`} />
+                      <span>{isFlashingOta ? 'Установка...' : `Установить ${selectedReleaseTag} на ESP32`}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* OTA Flash Action Box */}
             <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1876,12 +2257,12 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                 <div className="text-emerald-300">
                   esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                 </div>
-                <div className="text-slate-500 pt-2"># Или раздельная прошивка таблицы разделов и приложения:</div>
+                <div className="text-slate-500 pt-2"># Вариант 2: Раздельная прошивка (3 файла прямо со страницы GitHub Releases):</div>
                 <div className="text-sky-300">
-                  esptool.py --chip esp32 -p COM3 write_flash \<br />
+                  esptool.py --chip esp32 -p COM3 -b 460800 write_flash \<br />
                   &nbsp;&nbsp;0x1000 bootloader.bin \<br />
                   &nbsp;&nbsp;0x8000 partition-table.bin \<br />
-                  &nbsp;&nbsp;0x20000 ESP_lestn_v2.bin
+                  &nbsp;&nbsp;0x10000 ESP_lestn_v2.bin
                 </div>
               </div>
             </div>

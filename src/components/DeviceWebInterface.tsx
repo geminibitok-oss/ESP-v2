@@ -26,7 +26,8 @@ import {
   Download,
   Terminal,
   Check
-} from 'lucide-react';
+, Github, Tag, Zap, RefreshCw } from 'lucide-react';
+import { GitHubRelease } from '../types';
 
 interface DeviceWebInterfaceProps {
   settings: StaircaseSettings;
@@ -49,6 +50,70 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
   const [otaSuccess, setOtaSuccess] = useState(false);
   const [otaRebootTimer, setOtaRebootTimer] = useState<number | null>(null);
   const [activePartition, setActivePartition] = useState<'ota_0' | 'ota_1'>('ota_0');
+  const [currentFwVersion, setCurrentFwVersion] = useState('v2.0.0');
+
+  // GitHub Releases state in Device Web Interface
+  const [deviceReleases, setDeviceReleases] = useState<GitHubRelease[]>([]);
+  const [isLoadingReleases, setIsLoadingReleases] = useState(false);
+  const [selectedReleaseTag, setSelectedReleaseTag] = useState<string>('latest');
+  const [releaseCheckError, setReleaseCheckError] = useState<string | null>(null);
+
+  const fetchDeviceReleases = async () => {
+    setIsLoadingReleases(true);
+    setReleaseCheckError(null);
+    try {
+      const res = await fetch('https://api.github.com/repos/geminibitok-oss/ESP-v2/releases?per_page=15');
+      if (res.ok) {
+        const data = await res.json();
+        setDeviceReleases(data || []);
+        if (data && data.length > 0 && !selectedReleaseTag) {
+          setSelectedReleaseTag(data[0].tag_name);
+        }
+      } else {
+        setReleaseCheckError(`Статус HTTP: ${res.status}`);
+      }
+    } catch (e: any) {
+      setReleaseCheckError('Не удалось загрузить релизы с GitHub');
+    } finally {
+      setIsLoadingReleases(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDeviceReleases();
+  }, []);
+
+  const handleInstallRelease = (tag: string) => {
+    setOtaUploading(true);
+    setOtaProgress(0);
+    setOtaSuccess(false);
+    let p = 0;
+    const interval = setInterval(() => {
+      p += 20;
+      if (p <= 100) {
+        setOtaProgress(p);
+      } else {
+        clearInterval(interval);
+        setOtaUploading(false);
+        setOtaSuccess(true);
+        setOtaFile(null);
+        let countdown = 6;
+        setOtaRebootTimer(countdown);
+        const restartTimer = setInterval(() => {
+          countdown--;
+          if (countdown <= 0) {
+            clearInterval(restartTimer);
+            setOtaRebootTimer(null);
+            setActivePartition((prev) => (prev === 'ota_0' ? 'ota_1' : 'ota_0'));
+            setCurrentFwVersion(tag.startsWith('v') ? tag : (tag === 'latest' ? 'v2.0.1 (Latest)' : tag));
+            setSaveToast(`ESP32 успешно обновлен на версию ${tag} и перезагружен в новый OTA раздел!`);
+          } else {
+            setOtaRebootTimer(countdown);
+          }
+        }, 1000);
+      }
+    }, 400);
+  };
 
   // Sensor state reset state
   const [isResettingSensors, setIsResettingSensors] = useState(false);
@@ -1282,7 +1347,7 @@ pause
                 <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center justify-between">
                   <span>Схема Flash разделов ESP32 (Dual OTA)</span>
                   <span className="text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full">
-                    Версия: v2.0.0
+                    Версия: {currentFwVersion}
                   </span>
                 </h2>
 
@@ -1322,6 +1387,126 @@ pause
 
                 <div className="text-[11px] text-slate-400 leading-relaxed">
                   При обновлении прошивки файл записывается в неактивный раздел. Если контроллер успешно стартует с новой версии, раздел помечается как постоянный. В случае сбоя ESP-IDF автоматически откатывается на предыдущий рабочий раздел!
+                </div>
+              </div>
+
+              {/* GitHub Releases Direct Online Update */}
+              <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-5 shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-sky-950 text-sky-400 border border-sky-800 rounded-lg">
+                      <Github className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                        <span>Обновление из GitHub Releases</span>
+                        <span className="text-[10px] font-normal bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded-full font-mono">
+                          {deviceReleases.length > 0 ? `${deviceReleases.length} релизов` : 'Онлайн'}
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Проверка версий и выбор релиза для установки на ESP32 без проводов
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={fetchDeviceReleases}
+                    disabled={isLoadingReleases}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReleases ? 'animate-spin' : ''}`} />
+                    <span>{isLoadingReleases ? 'Проверка...' : 'Проверить версии'}</span>
+                  </button>
+                </div>
+
+                {releaseCheckError && (
+                  <div className="p-2.5 bg-amber-950/40 border border-amber-800 text-amber-300 rounded-lg text-xs">
+                    {releaseCheckError}
+                  </div>
+                )}
+
+                {/* Version comparison row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs">
+                  <div>
+                    <div className="text-slate-400 text-[11px]">Текущая версия на чипе:</div>
+                    <div className="font-mono font-bold text-slate-200 mt-0.5">{currentFwVersion}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-[11px]">Выбранная версия:</div>
+                    <div className="font-mono font-bold text-sky-400 mt-0.5">{selectedReleaseTag}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-[11px]">Статус обновления:</div>
+                    <div className="mt-0.5 font-medium">
+                      {deviceReleases.length > 0 && deviceReleases[0].tag_name !== currentFwVersion ? (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" /> Доступна новая версия!
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Версия актуальна
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Release selector */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Выберите какую версию установить:
+                  </label>
+                  {deviceReleases.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                      {deviceReleases.map((rel) => {
+                        const isSelected = selectedReleaseTag === rel.tag_name;
+                        return (
+                          <div
+                            key={rel.id}
+                            onClick={() => setSelectedReleaseTag(rel.tag_name)}
+                            className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-sky-950/80 border-sky-500 text-sky-100 ring-1 ring-sky-500'
+                                : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="font-mono font-bold text-sky-300 flex items-center gap-1">
+                                <Tag className="w-3 h-3 text-sky-400" />
+                                {rel.tag_name}
+                              </span>
+                              {rel.tag_name === 'latest' && (
+                                <span className="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1 rounded">
+                                  LATEST
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {rel.name || rel.tag_name}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400">
+                      Релизы загружаются или доступен релиз 'latest'.
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex items-center justify-end">
+                    <button
+                      type="button"
+                      disabled={otaUploading}
+                      onClick={() => handleInstallRelease(selectedReleaseTag)}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>{otaUploading ? 'Установка...' : `Установить версию ${selectedReleaseTag} на ESP32`}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
