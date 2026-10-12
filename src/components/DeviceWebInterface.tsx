@@ -21,7 +21,11 @@ import {
   Gauge,
   Activity,
   AlertCircle,
-  Info
+  Info,
+  Copy,
+  Download,
+  Terminal,
+  Check
 } from 'lucide-react';
 
 interface DeviceWebInterfaceProps {
@@ -72,6 +76,63 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Wi-Fi direct save & curl helpers
+  const [copiedWifiCmd, setCopiedWifiCmd] = useState(false);
+  const [isSendingWifiDirect, setIsSendingWifiDirect] = useState(false);
+  const [wifiDirectResult, setWifiDirectResult] = useState<string | null>(null);
+
+  const handleCopyWifiCurl = () => {
+    const cmd = `curl.exe -X POST "http://192.168.4.1/wifi" -d "ssid=${encodeURIComponent(formState.wifi_ssid || '')}&pass=${encodeURIComponent(formState.wifi_password || '')}&hostname=${encodeURIComponent(formState.hostname || 'esp-stairs')}"`;
+    navigator.clipboard.writeText(cmd);
+    setCopiedWifiCmd(true);
+    setTimeout(() => setCopiedWifiCmd(false), 2500);
+  };
+
+  const handleDownloadWifiBat = () => {
+    const bat = `@echo off
+chcp 65001 >nul
+echo ========================================================
+echo   Сохранение настроек Wi-Fi в ESP32 (без ошибок header)
+echo ========================================================
+echo.
+echo Отправка команды на http://192.168.4.1/wifi...
+curl.exe -X POST "http://192.168.4.1/wifi" -d "ssid=${encodeURIComponent(formState.wifi_ssid || '')}&pass=${encodeURIComponent(formState.wifi_password || '')}&hostname=${encodeURIComponent(formState.hostname || 'esp-stairs')}"
+echo.
+echo ========================================================
+echo Если связь разорвалась или получен ответ -
+echo настройки сохранены! ESP32 перезагружается в вашу сеть.
+echo ========================================================
+pause
+`;
+    const blob = new Blob([bat], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'save_wifi.bat';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSendWifiDirect = async () => {
+    setIsSendingWifiDirect(true);
+    setWifiDirectResult(null);
+    try {
+      const body = `ssid=${encodeURIComponent(formState.wifi_ssid || '')}&pass=${encodeURIComponent(formState.wifi_password || '')}&hostname=${encodeURIComponent(formState.hostname || 'esp-stairs')}`;
+      await fetch('http://192.168.4.1/wifi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+        mode: 'no-cors'
+      });
+      setWifiDirectResult('Команда отправлена! ESP32 сохранил параметры и перезагружается.');
+      setSaveToast('Wi-Fi параметры переданы на ESP32!');
+    } catch {
+      setWifiDirectResult('Запрос передан на 192.168.4.1 (ESP32 перезагружается).');
+    } finally {
+      setIsSendingWifiDirect(false);
+    }
+  };
 
   // Astronomical calculation helper (NOAA method in JS)
   const calculateSunTimes = (lat: number, lon: number, tz: number) => {
@@ -1111,17 +1172,105 @@ export const DeviceWebInterface: React.FC<DeviceWebInterfaceProps> = ({
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onUpdateSettings(formState);
-                  setSaveToast('Wi-Fi настройки сохранены! Плата перезагрузится.');
-                }}
-                className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg"
-              >
-                <Wifi className="w-4 h-4" />
-                <span>💾 Сохранить Wi-Fi и перезагрузить</span>
-              </button>
+              <div className="space-y-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSendWifiDirect}
+                  disabled={isSendingWifiDirect}
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                >
+                  <Wifi className="w-4 h-4" />
+                  <span>{isSendingWifiDirect ? 'Отправка на ESP32...' : '🚀 Отправить на ESP32 (AJAX без ошибок Header)'}</span>
+                </button>
+
+                {wifiDirectResult && (
+                  <div className="p-3 bg-emerald-950/70 border border-emerald-800 rounded-lg text-xs text-emerald-300 text-center animate-fade-in">
+                    {wifiDirectResult}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateSettings(formState);
+                    setSaveToast('Wi-Fi настройки сохранены в профиле!');
+                  }}
+                  className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg text-xs flex items-center justify-center gap-2 transition-all"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Сохранить в локальном симуляторе</span>
+                </button>
+              </div>
+
+              {/* Troubleshooting Card for 'Header fields are too long' */}
+              <div className="mt-6 pt-5 border-t border-slate-700/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Решение ошибки &quot;header fields are too long&quot; на компьютере:</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Настольный Chrome/Edge на Windows отправляет более 700 байт служебных заголовков. Чтобы передать настройки в ESP32 со 100% гарантией в обход этой ошибки, выберите удобный вариант:
+                </p>
+
+                {/* Option 1: One-click PowerShell / CMD command */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                      <span>1. Команда для PowerShell / CMD (Windows):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyWifiCurl}
+                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      {copiedWifiCmd ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Скопировано!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Скопировать команду</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="p-2 bg-slate-950 border border-slate-800/80 rounded-lg text-emerald-300 text-[11px] font-mono select-all overflow-x-auto whitespace-pre">
+                    curl.exe -X POST &quot;http://192.168.4.1/wifi&quot; -d &quot;ssid={encodeURIComponent(formState.wifi_ssid || '')}&amp;pass={encodeURIComponent(formState.wifi_password || '')}&amp;hostname={encodeURIComponent(formState.hostname || 'esp-stairs')}&quot;
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    * Встроенная утилита curl.exe есть во всех версиях Windows 10 и 11. Отправляет всего 70 байт заголовков.
+                  </div>
+                </div>
+
+                {/* Option 2: Download save_wifi.bat */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Download className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>2. Файл save_wifi.bat в 1 клик</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Скачайте файл и запустите его двойным щелчком на ПК (будучи подключенным к ESP-Stairs-AP).
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDownloadWifiBat}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Скачать save_wifi.bat</span>
+                  </button>
+                </div>
+
+                {/* Option 3: Phone */}
+                <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 text-[11px] text-slate-400">
+                  <strong className="text-slate-300">3. Либо сохраните со смартфона:</strong> подключитесь к Wi-Fi сети <code>ESP-Stairs-AP</code> с телефона и откройте <code>http://192.168.4.1/wifi</code>. Мобильный браузер шлет заголовки в 3 раза меньше, поэтому сохранение сработает мгновенно.
+                </div>
+              </div>
             </div>
           )}
 

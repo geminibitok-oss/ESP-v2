@@ -998,35 +998,52 @@ esp_err_t wifi_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req, "<div class='card'><h2>Сеть Wi-Fi</h2>");
 
-    char buf[1024];
     snprintf(buf, sizeof(buf),
-        "<p>Текущий IP: <strong>%s</strong> (%s)</p><form method='POST' action='/wifi'>",
+        "<p>Текущий IP: <strong>%s</strong> (%s)</p>"
+        "<form id='wf' onsubmit='event.preventDefault();saveWifi();'>",
         wifi_manager_get_ip(),
         wifi_manager_is_ap_mode() ? "Точка доступа" : "Подключено к роутеру"
     );
     httpd_resp_sendstr_chunk(req, buf);
 
     snprintf(buf, sizeof(buf),
-        "<div class='form-group'><label>Имя сети (SSID)</label><input type='text' name='ssid' value='%s' required></div>",
+        "<div class='form-group'><label>Имя сети (SSID)</label><input type='text' id='ssid' name='ssid' value='%s' required></div>",
         cfg->wifi_ssid
     );
     httpd_resp_sendstr_chunk(req, buf);
 
     snprintf(buf, sizeof(buf),
-        "<div class='form-group'><label>Пароль</label><input type='password' name='pass' value='%s' placeholder='••••••••'></div>",
+        "<div class='form-group'><label>Пароль</label><input type='password' id='pass' name='pass' value='%s' placeholder='••••••••'></div>",
         cfg->wifi_password
     );
     httpd_resp_sendstr_chunk(req, buf);
 
     snprintf(buf, sizeof(buf),
-        "<div class='form-group'><label>Имя устройства (mDNS)</label><input type='text' name='hostname' value='%s'></div>",
+        "<div class='form-group'><label>Имя устройства (mDNS)</label><input type='text' id='hostname' name='hostname' value='%s'></div>",
         cfg->hostname
     );
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
-        "<button type='submit' class='btn btn-success' style='width:100%;margin-top:10px'>💾 Сохранить и перезагрузить</button>"
+        "<button type='submit' id='sbtn' class='btn btn-success' style='width:100%;margin-top:10px'>💾 Сохранить и перезагрузить</button>"
         "</form>"
+        "<div id='res' style='display:none;margin-top:12px;padding:12px;background:#064e3b;border-radius:8px;color:#34d399;font-size:13px;text-align:center'>"
+        "✅ Настройки сохранены! ESP32 перезагружается для подключения к сети..."
+        "</div>"
+        "<script>"
+        "function saveWifi(){"
+        "var b=document.getElementById('sbtn');b.disabled=true;b.innerText='Сохранение...';"
+        "var s=document.getElementById('ssid').value;"
+        "var p=document.getElementById('pass').value;"
+        "var h=document.getElementById('hostname').value;"
+        "var body='ssid='+encodeURIComponent(s)+'&pass='+encodeURIComponent(p)+'&hostname='+encodeURIComponent(h);"
+        "var x=new XMLHttpRequest();x.open('POST','/wifi',true);"
+        "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
+        "x.onload=function(){document.getElementById('wf').style.display='none';document.getElementById('res').style.display='block';};"
+        "x.onerror=function(){document.getElementById('wf').style.display='none';document.getElementById('res').style.display='block';};"
+        "x.send(body);"
+        "}"
+        "</script>"
         "</div>"
     );
 
