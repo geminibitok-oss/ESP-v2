@@ -630,6 +630,15 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
                   />
                   <span>Реверс при гашении (встречный ход)</span>
                 </label>
+                <label className="inline-flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.strip_zigzag ?? false}
+                    onChange={(e) => onUpdateSettings({ strip_zigzag: e.target.checked })}
+                    className="rounded border-zinc-700 text-sky-500 focus:ring-0"
+                  />
+                  <span>Лента проложена зигзагом (змейкой)</span>
+                </label>
               </div>
             </div>
 

@@ -42,6 +42,7 @@ export interface StaircaseSettings {
   night_mode: boolean;
   night_mode_type: number; // 0: edge steps, 1: all steps
   reverse_direction: boolean;
+  strip_zigzag?: boolean; // Топология ленты: змейка/зигзаг (чередование направления)
   sensor_active_high: boolean;
   sensor_debounce_ms: number;
 

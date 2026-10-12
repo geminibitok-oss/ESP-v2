@@ -746,6 +746,30 @@ pause
                   </div>
                 </div>
 
+                <div className="mb-4 p-3 bg-slate-900/80 border border-slate-700/80 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-200">
+                        Топология ленты на ступенях
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {formState.strip_zigzag
+                          ? 'Зигзаг / Змейка: нечетные ступени программно инвертируются справа-налево для равномерного фронта'
+                          : 'Прямое подключение: лента на каждой ступени распаяна строго слева-направо'}
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                      <input
+                        type="checkbox"
+                        checked={formState.strip_zigzag ?? false}
+                        onChange={(e) => setFormState({ ...formState, strip_zigzag: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1">Задержка вкл. (мс)</label>

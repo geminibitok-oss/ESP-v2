@@ -21,11 +21,24 @@ static bool step_state[STAIR_MAX_STEPS] = {false};
 static uint8_t led_gpio = 4;
 static bool enable_first_step = true;
 static bool enable_last_step = true;
+static bool strip_zigzag = false;
 
 static uint8_t scale_color(uint8_t color, uint8_t brightness_pct)
 {
     if (brightness_pct > 100) brightness_pct = 100;
     return (uint8_t)(((uint32_t)color * brightness_pct) / 100);
+}
+
+/* Рассчитывает физический индекс светодиода с учетом зигзагообразной топологии ленты */
+static inline uint16_t get_physical_pixel_index(uint16_t step, uint16_t p)
+{
+    if (!strip_zigzag || (step % 2 == 0)) {
+        /* Прямой порядок слева-направо */
+        return step * pixels_per_step + p;
+    } else {
+        /* Четная/нечетная ступень развернута в обратную сторону при прокладке змейкой */
+        return step * pixels_per_step + (pixels_per_step - 1 - p);
+    }
 }
 
 esp_err_t staircase_led_init(const staircase_settings_t *settings)
@@ -47,6 +60,7 @@ esp_err_t staircase_led_init(const staircase_settings_t *settings)
     total_pixels = step_count * pixels_per_step;
     enable_first_step = settings->enable_first_step;
     enable_last_step = settings->enable_last_step;
+    strip_zigzag = settings->strip_zigzag;
 
     memset(step_state, 0, sizeof(step_state));
 
@@ -223,9 +237,9 @@ void staircase_led_all_on(
             if (s == 0 && !enable_first_step) allow = false;
             if (step_count > 0 && s == (step_count - 1) && !enable_last_step) allow = false;
 
-            uint16_t first = s * pixels_per_step;
             for (uint16_t i = 0; i < pixels_per_step; i++) {
-                staircase_led_set_pixel(first + i, allow ? r : 0, allow ? g : 0, allow ? b : 0);
+                uint16_t phys_idx = get_physical_pixel_index(s, i);
+                staircase_led_set_pixel(phys_idx, allow ? r : 0, allow ? g : 0, allow ? b : 0);
             }
             step_state[s] = allow && (r != 0 || g != 0 || b != 0);
         }
@@ -286,9 +300,9 @@ void staircase_led_apply_night_mode(const staircase_settings_t *settings)
                 if (step_count > 0 && s == (step_count - 1) && (!settings->enable_last_step || !settings->night_last_step)) allow = false;
 
                 if (allow) {
-                    uint16_t first = s * pixels_per_step;
                     for (uint16_t i = 0; i < pixels_per_step; i++) {
-                        staircase_led_set_pixel(first + i, r, g, b);
+                        uint16_t phys_idx = get_physical_pixel_index(s, i);
+                        staircase_led_set_pixel(phys_idx, r, g, b);
                     }
                     step_state[s] = true;
                 }
@@ -405,9 +419,9 @@ void staircase_led_render_shimmer_frame(
             uint8_t g = scale_color(base_g, (uint8_t)cur_bright);
             uint8_t b = scale_color(base_b, (uint8_t)cur_bright);
 
-            uint16_t first = s * pixels_per_step;
             for (uint16_t i = 0; i < pixels_per_step; i++) {
-                staircase_led_set_pixel(first + i, r, g, b);
+                uint16_t phys_idx = get_physical_pixel_index(s, i);
+                staircase_led_set_pixel(phys_idx, r, g, b);
             }
             step_state[s] = true;
         }
@@ -447,9 +461,9 @@ void staircase_led_render_meteor_step(
                 step_b = scale_color(b, (brightness_pct * 80) / 100);
             }
 
-            uint16_t first = s * pixels_per_step;
             for (uint16_t i = 0; i < pixels_per_step; i++) {
-                staircase_led_set_pixel(first + i, step_r, step_g, step_b);
+                uint16_t phys_idx = get_physical_pixel_index(s, i);
+                staircase_led_set_pixel(phys_idx, step_r, step_g, step_b);
             }
             step_state[s] = (step_r != 0 || step_g != 0 || step_b != 0);
         }

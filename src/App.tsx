@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS: StaircaseSettings = {
   night_mode: true,
   night_mode_type: 0,
   reverse_direction: false,
+  strip_zigzag: false,
   sensor_active_high: true,
   sensor_debounce_ms: 60,
 

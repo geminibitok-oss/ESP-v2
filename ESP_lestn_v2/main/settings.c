@@ -59,6 +59,7 @@ void settings_reset(staircase_settings_t *s)
     s->night_mode = true;
     s->night_mode_type = 0;       /* 0: edge steps only, 1: all steps */
     s->reverse_direction = false;
+    s->strip_zigzag = false;
     s->sensor_active_high = true;
 
     /* First & Last step controls (default enabled) */

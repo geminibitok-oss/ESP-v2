@@ -95,6 +95,7 @@ typedef struct
     bool night_mode;            /* Enable ambient night backlight */
     uint8_t night_mode_type;    /* 0 = first & last steps only, 1 = all steps dimmed */
     bool reverse_direction;     /* Turn off in opposite direction */
+    bool strip_zigzag;          /* Топология ленты: зигзаг/змейка (чередование направления ленты на каждой ступени) */
     bool sensor_active_high;    /* Sensor active level (true = HIGH/3.3V, false = LOW/GND) */
 
     /* First & Last Steps Illumination Control */
