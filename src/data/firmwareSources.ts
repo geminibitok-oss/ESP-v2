@@ -5913,11 +5913,14 @@ jobs:
         working-directory: ESP_lestn_v2
         run: |
           . $IDF_PATH/export.sh
-          # Гарантируем большой буфер HTTP заголовков (4096 байт) во избежание ошибки 431 'Header fields are too long'
+          # Удаляем старый кеш sdkconfig, чтобы гарантированно применился 4MB Flash размер
+          rm -f sdkconfig
+          echo "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y" >> sdkconfig.defaults
+          echo 'CONFIG_ESPTOOLPY_FLASHSIZE="4MB"' >> sdkconfig.defaults
+          echo "CONFIG_PARTITION_TABLE_CUSTOM=y" >> sdkconfig.defaults
+          echo 'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"' >> sdkconfig.defaults
           echo "CONFIG_HTTPD_MAX_REQ_HDR_LEN=4096" >> sdkconfig.defaults
           echo "CONFIG_HTTPD_MAX_URI_LEN=1024" >> sdkconfig.defaults
-          echo "CONFIG_PARTITION_TABLE_CUSTOM=y" >> sdkconfig.defaults
-          echo "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"" >> sdkconfig.defaults
           idf.py set-target \${{ github.event.inputs.target || 'esp32' }}
 
       - name: Сборка прошивки
