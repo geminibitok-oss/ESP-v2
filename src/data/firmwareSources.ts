@@ -2102,6 +2102,2376 @@ esp_err_t ota_page_handler(httpd_req_t *req)
         "<button class='btn btn-sm' onclick='loadGitHubReleases()'>🔄 Проверить версии</button>"
         "</div>"
         "<p style='font-size:12px;color:#94a3b8;margin-bottom:12px'>"
+        "Выберите нужную версию прошивки из репозитория <b>geminibitok-oss/ESP-v2</b>."
+        "</p>"
+        "<div id='gh_status' style='font-size:12px;color:#cbd5e1;margin-bottom:10px;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155'>"
+        "Загрузка версий..."
+        "</div>"
+        "<div style='margin-bottom:12px'>"
+        "<label for='rel_select' style='font-size:12px;color:#94a3b8'>Доступные релизы:</label>"
+        "<select id='rel_select' style='margin-bottom:8px' onchange='onSelectRelease()'>"
+        "<option value='latest'>latest (Свежая сборка)</option>"
+        "</select>"
+        "</div>"
+        "<div style='display:flex;gap:8px;flex-wrap:wrap'>"
+        "<a id='gh_dl_link' class='btn' style='flex:1;background:#0284c7;text-align:center;text-decoration:none' target='_blank' download>📥 Скачать ESP_lestn_v2.bin</a>"
+        "</div>"
+        "<div style='font-size:11px;color:#94a3b8;margin-top:8px'>"
+        "💡 Нажмите <b>«📥 Скачать ESP_lestn_v2.bin»</b>, затем выберите скачанный файл в блоке ниже и нажмите <b>«🚀 Загрузить и обновить ESP32»</b>."
+        "</div>"
+        "</div>"
+    );
+
+    // 3. Local file upload card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card'>"
+        "<h3>📁 Загрузить файл прошивки в память ESP32</h3>"
+        "<div style='margin-top:10px'>"
+        "<input type='file' id='ota_file' accept='.bin' style='margin-bottom:12px'>"
+        "<button id='up_btn' class='btn' style='width:100%;background:#16a34a' onclick='startOTA()'>🚀 Загрузить и обновить ESP32</button>"
+        "</div>"
+        "<div id='prg_box' style='display:none;margin-top:14px'>"
+        "<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px'>"
+        "<span id='st_txt'>Запись во Flash память...</span><span id='pct'>0%</span>"
+        "</div>"
+        "<div style='background:#0f172a;height:8px;border-radius:4px;overflow:hidden;border:1px solid #334155'>"
+        "<div id='bar' style='background:#0284c7;width:0%;height:100%;transition:width 0.2s'></div>"
+        "</div>"
+        "</div>"
+        "</div>"
+    );
+
+    // 4. Client-side JavaScript logic
+    httpd_resp_sendstr_chunk(req,
+        "<script>"
+        "var ghReleases=[];"
+        "function updateDlLink(tag){"
+        "var a=document.getElementById('gh_dl_link');"
+        "a.href='https://github.com/geminibitok-oss/ESP-v2/releases/download/'+tag+'/ESP_lestn_v2.bin';"
+        "a.innerHTML='📥 Скачать ESP_lestn_v2.bin ('+tag+')';"
+        "}"
+        "function loadGitHubReleases(){"
+        "var st=document.getElementById('gh_status');st.innerHTML='⏳ Запрос релизов с api.github.com...';"
+        "var xhr=new XMLHttpRequest();xhr.open('GET','https://api.github.com/repos/geminibitok-oss/ESP-v2/releases?per_page=15',true);"
+        "xhr.onload=function(){if(xhr.status==200){try{"
+        "ghReleases=JSON.parse(xhr.responseText);"
+        "var sel=document.getElementById('rel_select');sel.innerHTML='';"
+        "if(ghReleases&&ghReleases.length>0){"
+        "for(var i=0;i<ghReleases.length;i++){"
+        "var r=ghReleases[i];"
+        "var opt=document.createElement('option');opt.value=r.tag_name;"
+        "opt.text=r.tag_name+(r.tag_name==='latest'?' (Свежая автосборка)':' - '+(r.name||'Релиз'));"
+        "sel.appendChild(opt);"
+        "}"
+        "updateDlLink(ghReleases[0].tag_name);"
+        "st.innerHTML='✅ Найдено релизов: <b>'+ghReleases.length+'</b>. Выберите версию и скачайте бинарник в 1 клик.';"
+        "}else{"
+        "st.innerHTML='ℹ️ Доступен базовый релиз latest.';"
+        "updateDlLink('latest');"
+        "}"
+        "}catch(e){st.innerHTML='Ошибка парсинга: '+e;}}"
+        "else{st.innerHTML='⚠️ GitHub API ответил: '+xhr.status;updateDlLink('latest');}};"
+        "xhr.onerror=function(){st.innerHTML='⚠️ Нет прямого доступа к api.github.com.';updateDlLink('latest');};"
+        "xhr.send();"
+        "}"
+        "function onSelectRelease(){"
+        "var sel=document.getElementById('rel_select');"
+        "updateDlLink(sel.value||'latest');"
+        "}"
+        "function startOTA(){"
+        "var f=document.getElementById('ota_file').files[0];"
+        "if(!f){alert('Пожалуйста, выберите .bin файл');return;}"
+        "var b=document.getElementById('up_btn');b.disabled=true;"
+        "var p=document.getElementById('prg_box');p.style.display='block';"
+        "var bar=document.getElementById('bar');var pct=document.getElementById('pct');var st=document.getElementById('st_txt');"
+        "var xhr=new XMLHttpRequest();xhr.open('POST','/api/ota',true);"
+        "xhr.upload.onprogress=function(e){if(e.lengthComputable){var pc=Math.round((e.loaded/e.total)*100);bar.style.width=pc+'%';pct.innerText=pc+'%';}};"
+        "xhr.onload=function(){if(xhr.status==200){st.innerText='Успех! Контроллер перезагружается...';bar.style.background='#16a34a';"
+        "var c=15;var ti=setInterval(function(){st.innerText='Перезагрузка... ('+c+'с)';if(--c<=0){clearInterval(ti);location.href='/';}},1000);"
+        "}else{alert('Ошибка OTA: '+xhr.responseText);b.disabled=false;}};"
+        "xhr.onerror=function(){alert('Сбой сети при передаче OTA');b.disabled=false;};"
+        "xhr.send(f);"
+        "}"
+        "setTimeout(loadGitHubReleases, 300);"
+        "</script>"
+    );
+
+    web_send_html_footer(req);
+    return ESP_OK;
+}
+
+esp_err_t ota_status_handler(httpd_req_t *req)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+    esp_app_desc_t running_app_info;
+    if (esp_ota_get_partition_description(running, &running_app_info) != ESP_OK) {
+        strncpy(running_app_info.version, "2.0.0", sizeof(running_app_info.version));
+        strncpy(running_app_info.project_name, "ESP_lestn_v2", sizeof(running_app_info.project_name));
+    }
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{"
+        "\"project_name\":\"%s\","
+        "\"version\":\"%s\","
+        "\"running_partition\":\"%s\","
+        "\"running_address\":\"0x%lx\","
+        "\"boot_partition\":\"%s\","
+        "\"next_update_partition\":\"%s\","
+        "\"free_heap\":%lu"
+        "}",
+        running_app_info.project_name,
+        running_app_info.version,
+        running ? running->label : "unknown",
+        running ? (unsigned long)running->address : 0,
+        configured ? configured->label : "unknown",
+        update ? update->label : "unknown",
+        (unsigned long)esp_get_free_heap_size()
+    );
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t ota_post_handler(httpd_req_t *req)
+{
+    esp_ota_handle_t update_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+
+    ESP_LOGI(TAG, "Starting Over-The-Air (OTA) firmware update...");
+
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "Passive OTA partition not found");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA partition not found");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%lx (label: %s)",
+             update_partition->subtype, (unsigned long)update_partition->address, update_partition->label);
+
+    int total_len = req->content_len;
+    if (total_len <= 0) {
+        ESP_LOGE(TAG, "Content-Length not specified or invalid");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length header required");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_begin failed");
+        return ESP_FAIL;
+    }
+
+    char *ota_write_data = (char *)malloc(OTA_BUFF_SIZE);
+    if (!ota_write_data) {
+        ESP_LOGE(TAG, "Failed to allocate OTA buffer");
+        esp_ota_abort(update_handle);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    int remaining = total_len;
+    bool is_first_chunk = true;
+
+    while (remaining > 0) {
+        int to_read = remaining > OTA_BUFF_SIZE ? OTA_BUFF_SIZE : remaining;
+        int received = httpd_req_recv(req, ota_write_data, to_read);
+        if (received <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue; // Retry on timeout
+            }
+            ESP_LOGE(TAG, "File receive error: %d", received);
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA transfer interrupted");
+            return ESP_FAIL;
+        }
+
+        if (is_first_chunk) {
+            is_first_chunk = false;
+            // Validate magic byte (0xE9 for ESP32 image)
+            if ((uint8_t)ota_write_data[0] != 0xE9) {
+                ESP_LOGE(TAG, "Invalid image magic byte: 0x%02X (expected 0xE9)", (uint8_t)ota_write_data[0]);
+                free(ota_write_data);
+                esp_ota_abort(update_handle);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid firmware binary header");
+                return ESP_FAIL;
+            }
+        }
+
+        err = esp_ota_write(update_handle, (const void *)ota_write_data, received);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed (%s)", esp_err_to_name(err));
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
+            return ESP_FAIL;
+        }
+
+        remaining -= received;
+    }
+
+    free(ota_write_data);
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware validation failed");
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to switch boot partition");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA upgrade successful! Next boot partition: %s. Scheduling reboot in 1.5s...", update_partition->label);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    const char *resp = "{\"status\":\"success\",\"message\":\"Firmware successfully flashed. Rebooting ESP32...\"}";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+    // Schedule reboot after sending response
+    web_schedule_restart(1500);
+
+    return ESP_OK;
+}
+`
+  },
+  {
+    name: 'web_server.c',
+    path: 'main/web_server.c',
+    category: 'web',
+    description: 'Главная точка регистрации эндпоинтов и запуска HTTP сервера ESP-IDF.',
+    code: `#include "web_server.h"
+#include "web_routes.h"
+#include "web_common.h"
+
+static const char *TAG = "WEB_SERVER";
+static httpd_handle_t server = NULL;
+
+extern void web_index_set_settings(staircase_settings_t *settings);
+extern void web_settings_set_settings(staircase_settings_t *settings);
+extern void web_wifi_set_settings(staircase_settings_t *settings);
+extern void web_api_set_settings(staircase_settings_t *settings);
+
+esp_err_t web_server_start(staircase_settings_t *settings)
+{
+    web_index_set_settings(settings);
+    web_settings_set_settings(settings);
+    web_wifi_set_settings(settings);
+    web_api_set_settings(settings);
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_uri_handlers = 16;
+    config.stack_size = 8192;
+    config.lru_purge_enable = true;
+    config.max_resp_headers = 16;
+
+    ESP_LOGI(TAG, "Starting HTTP Web Server on port %d...", config.server_port);
+
+    esp_err_t err = httpd_start(&server, &config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    httpd_uri_t uri_index = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_get = { .uri = "/settings", .method = HTTP_GET, .handler = settings_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_post = { .uri = "/settings", .method = HTTP_POST, .handler = settings_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_get = { .uri = "/wifi", .method = HTTP_GET, .handler = wifi_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_post = { .uri = "/wifi", .method = HTTP_POST, .handler = wifi_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_state = { .uri = "/api/state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_trigger = { .uri = "/api/trigger", .method = HTTP_GET, .handler = api_trigger_handler, .user_ctx = NULL };
+
+    /* OTA Обновление прошивки */
+    httpd_uri_t uri_ota_page = { .uri = "/update", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_page_alt = { .uri = "/ota", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_post = { .uri = "/api/ota", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_post_update = { .uri = "/update", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_status = { .uri = "/api/ota/status", .method = HTTP_GET, .handler = ota_status_handler, .user_ctx = NULL };
+
+    /* Для обратной совместимости */
+    httpd_uri_t uri_led_state = { .uri = "/led-state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+
+    httpd_register_uri_handler(server, &uri_index);
+    httpd_register_uri_handler(server, &uri_settings_get);
+    httpd_register_uri_handler(server, &uri_settings_post);
+    httpd_register_uri_handler(server, &uri_wifi_get);
+    httpd_register_uri_handler(server, &uri_wifi_post);
+    httpd_register_uri_handler(server, &uri_api_state);
+    httpd_register_uri_handler(server, &uri_api_trigger);
+    httpd_register_uri_handler(server, &uri_ota_page);
+    httpd_register_uri_handler(server, &uri_ota_page_alt);
+    httpd_register_uri_handler(server, &uri_ota_post);
+    httpd_register_uri_handler(server, &uri_ota_post_update);
+    httpd_register_uri_handler(server, &uri_ota_status);
+    httpd_register_uri_handler(server, &uri_led_state);
+
+    ESP_LOGI(TAG, "Web server started with endpoints: /, /settings, /wifi, /update, /api/state, /api/ota");
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'web_server.h',
+    path: 'main/web_server.h',
+    category: 'web',
+    description: 'Интерфейс веб-сервера управления.',
+    code: `#pragma once
+
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t web_server_start(staircase_settings_t *settings);`
+  },
+  {
+    name: 'sensors.h',
+    path: 'main/sensors.h',
+    category: 'driver',
+    description: 'Интерфейс драйвера датчиков присутствия (цифровые PIR/оптические и ультразвуковые HC-SR04).',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t sensors_init(const staircase_settings_t *settings);
+bool sensor_bottom_active(void);
+bool sensor_top_active(void);
+int sensor_bottom_level(void);
+int sensor_top_level(void);
+
+// Функции для работы с ультразвуковыми дальномерами HC-SR04
+uint16_t sensor_bottom_distance_cm(void);
+uint16_t sensor_top_distance_cm(void);
+bool sensor_is_ultrasonic(void);
+void sensors_reset_state(void);`
+  },
+  {
+    name: 'sensors.c',
+    path: 'main/sensors.c',
+    category: 'driver',
+    description: 'Драйвер датчиков присутствия: цифровой режим (PIR/оптика с подавлением дребезга) и ультразвуковой режим HC-SR04 (эхолокация в см с фильтрацией шумов).',
+    code: `#include "sensors.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "SENSORS";
+
+static staircase_settings_t cfg;
+static int64_t last_bottom_change_us = 0;
+static int64_t last_top_change_us = 0;
+static bool last_bottom_state = false;
+static bool last_top_state = false;
+
+static uint16_t bottom_dist_cm = 999;
+static uint16_t top_dist_cm = 999;
+
+// Измерение расстояния дальномером HC-SR04 (в сантиметрах)
+static uint16_t measure_hcsr04_distance(gpio_num_t trig_pin, gpio_num_t echo_pin, uint16_t max_dist_cm)
+{
+    // 1. Короткий импульс TRIG 10 мкс
+    gpio_set_level(trig_pin, 0);
+    esp_rom_delay_us(4);
+    gpio_set_level(trig_pin, 1);
+    esp_rom_delay_us(10);
+    gpio_set_level(trig_pin, 0);
+
+    // 2. Ожидание начала импульса ECHO (HIGH) с таймаутом ~10 мс
+    int64_t start_wait = esp_timer_get_time();
+    while (gpio_get_level(echo_pin) == 0) {
+        if ((esp_timer_get_time() - start_wait) > 10000) {
+            return 999; // Таймаут старта
+        }
+    }
+
+    // 3. Измерение длительности импульса ECHO
+    int64_t echo_start = esp_timer_get_time();
+    int64_t max_echo_time = echo_start + (int64_t)max_dist_cm * 58 + 2000;
+
+    while (gpio_get_level(echo_pin) == 1) {
+        if (esp_timer_get_time() > max_echo_time) {
+            return 999; // Превышение максимальной дистанции
+        }
+    }
+    int64_t echo_end = esp_timer_get_time();
+    int64_t duration_us = echo_end - echo_start;
+
+    // Скорость звука ~ 343 м/с -> 1 см за 58.2 мкс
+    uint16_t dist = (uint16_t)(duration_us / 58);
+    if (dist < 2 || dist > max_dist_cm) {
+        return 999;
+    }
+    return dist;
+}
+
+// Фоновая задача опроса ультразвуковых датчиков HC-SR04
+static void ultrasonic_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "HC-SR04 Ultrasonic background polling task started");
+
+    while (1)
+    {
+        if (cfg.sensor_type == 1) {
+            // Опрос нижнего датчика HC-SR04 (TRIG = cfg.sensor_bottom_gpio, ECHO = cfg.sensor_bottom_echo_gpio)
+            uint16_t d_bot = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_bottom_gpio,
+                (gpio_num_t)cfg.sensor_bottom_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            bottom_dist_cm = d_bot;
+            last_bottom_state = (d_bot > 0 && d_bot <= cfg.ultrasonic_trigger_distance_cm);
+
+            vTaskDelay(pdMS_TO_TICKS(25)); // Задержка между ультразвуковыми пингами
+
+            // Опрос верхнего датчика HC-SR04 (TRIG = cfg.sensor_top_gpio, ECHO = cfg.sensor_top_echo_gpio)
+            uint16_t d_top = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_top_gpio,
+                (gpio_num_t)cfg.sensor_top_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            top_dist_cm = d_top;
+            last_top_state = (d_top > 0 && d_top <= cfg.ultrasonic_trigger_distance_cm);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+esp_err_t sensors_init(const staircase_settings_t *settings)
+{
+    cfg = *settings;
+
+    if (cfg.sensor_type == 1) {
+        // Конфигурация для HC-SR04:
+        // TRIG пины как ВЫХОДЫ
+        gpio_config_t trig_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&trig_conf));
+        gpio_set_level((gpio_num_t)cfg.sensor_bottom_gpio, 0);
+        gpio_set_level((gpio_num_t)cfg.sensor_top_gpio, 0);
+
+        // ECHO пины как ВХОДЫ с подтяжкой к земле
+        gpio_config_t echo_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_echo_gpio) | (1ULL << cfg.sensor_top_echo_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_ENABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&echo_conf));
+
+        xTaskCreate(ultrasonic_task, "ultrasonic_task", 3072, NULL, 4, NULL);
+
+        ESP_LOGI(TAG, "HC-SR04 Sensors initialized: Bottom TRIG=%d/ECHO=%d, Top TRIG=%d/ECHO=%d, Trigger=%d cm",
+                 cfg.sensor_bottom_gpio, cfg.sensor_bottom_echo_gpio,
+                 cfg.sensor_top_gpio, cfg.sensor_top_echo_gpio,
+                 cfg.ultrasonic_trigger_distance_cm);
+    } else {
+        // Конфигурация для цифровых PIR / оптических датчиков
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = cfg.sensor_active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
+            .pull_down_en = cfg.sensor_active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        ESP_LOGI(TAG, "PIR/Optical Sensors initialized: Bottom GPIO %d, Top GPIO %d (Active: %s, Debounce: %d ms)",
+                 cfg.sensor_bottom_gpio, cfg.sensor_top_gpio,
+                 cfg.sensor_active_high ? "HIGH" : "LOW",
+                 cfg.sensor_debounce_ms);
+    }
+
+    return ESP_OK;
+}
+
+int sensor_bottom_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_bottom_gpio);
+}
+
+int sensor_top_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_top_gpio);
+}
+
+uint16_t sensor_bottom_distance_cm(void)
+{
+    return bottom_dist_cm;
+}
+
+uint16_t sensor_top_distance_cm(void)
+{
+    return top_dist_cm;
+}
+
+bool sensor_is_ultrasonic(void)
+{
+    return (cfg.sensor_type == 1);
+}
+
+bool sensor_bottom_active(void)
+{
+    if (cfg.sensor_type == 1) {
+        return last_bottom_state;
+    }
+
+    int level = sensor_bottom_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_bottom_state) {
+        if ((now_us - last_bottom_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_bottom_state = raw_active;
+            last_bottom_change_us = now_us;
+        }
+    }
+    return last_bottom_state;
+}
+
+bool sensor_top_active(void)
+{
+    if (cfg.sensor_type == 1) {
+        return last_top_state;
+    }
+
+    int level = sensor_top_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_top_state) {
+        if ((now_us - last_top_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_top_state = raw_active;
+            last_top_change_us = now_us;
+        }
+    }
+    return last_top_state;
+}
+
+void sensors_reset_state(void)
+{
+    last_bottom_state = false;
+    last_top_state = false;
+    bottom_dist_cm = 999;
+    top_dist_cm = 999;
+    ESP_LOGI(TAG, "Sensors manually reset to idle state");
+}`
+  },
+  {
+    name: 'settings.h',
+    path: 'main/settings.h',
+    category: 'core',
+    description: 'Структура конфигурации и интерфейс сохранения в энергонезависимую память (NVS).',
+    code: `#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+
+typedef struct {
+    uint16_t steps;
+    uint16_t pixels_per_step;
+    uint8_t brightness;
+    uint8_t night_brightness;
+    uint16_t step_on_time_ms;
+    uint16_t step_off_time_ms;
+    uint16_t hold_time_ms;
+    uint8_t color_r;
+    uint8_t color_g;
+    uint8_t color_b;
+    uint8_t led_gpio;
+    uint8_t sensor_bottom_gpio;
+    uint8_t sensor_top_gpio;
+    bool sensor_active_high;
+    uint16_t sensor_debounce_ms;
+    bool night_mode;
+    // Управление первой и последней ступенью
+    bool enable_first_step;
+    bool enable_last_step;
+    bool night_first_step;
+    bool night_last_step;
+    char wifi_ssid[32];
+    char wifi_password[64];
+    char hostname[32];
+    // Датчики: 0 = Цифровой PIR / Оптический, 1 = Ультразвуковой HC-SR04
+    uint8_t sensor_type;
+    uint8_t sensor_bottom_echo_gpio;
+    uint8_t sensor_top_echo_gpio;
+    uint16_t ultrasonic_trigger_distance_cm;
+    uint16_t ultrasonic_max_distance_cm;
+    // Время NTP и Астротаймер
+    bool ntp_enabled;
+    char ntp_server[64];
+    int8_t timezone_offset;
+    float latitude;
+    float longitude;
+    uint8_t schedule_mode;
+    int16_t sunset_offset_min;
+    int16_t sunrise_offset_min;
+    uint8_t fixed_on_hour;
+    uint8_t fixed_on_minute;
+    uint8_t fixed_off_hour;
+    uint8_t fixed_off_minute;
+} staircase_settings_t;
+
+void settings_init(staircase_settings_t *settings);
+esp_err_t settings_load(staircase_settings_t *settings);
+esp_err_t settings_save(const staircase_settings_t *settings);
+esp_err_t settings_reset_defaults(staircase_settings_t *settings);`
+  },
+  {
+    name: 'settings.c',
+    path: 'main/settings.c',
+    category: 'core',
+    description: 'Сохранение и загрузка настроек лестницы в ESP32 NVS.',
+    code: `#include "settings.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_log.h"
+#include <string.h>
+
+static const char *TAG = "SETTINGS";
+static const char *NVS_NAMESPACE = "stair_cfg";
+
+void settings_init(staircase_settings_t *settings)
+{
+    settings->steps = 18;
+    settings->pixels_per_step = 1;
+    settings->brightness = 80;
+    settings->night_brightness = 20;
+    settings->step_on_time_ms = 150;
+    settings->step_off_time_ms = 150;
+    settings->hold_time_ms = 5000;
+    settings->color_r = 255;
+    settings->color_g = 220;
+    settings->color_b = 180;
+    settings->led_gpio = 4;
+    settings->sensor_bottom_gpio = 23;
+    settings->sensor_top_gpio = 22;
+    settings->sensor_active_high = true;
+    settings->sensor_debounce_ms = 50;
+    settings->night_mode = false;
+    settings->enable_first_step = true;
+    settings->enable_last_step = true;
+    settings->night_first_step = true;
+    settings->night_last_step = true;
+    strncpy(settings->wifi_ssid, "ESP-Lestn", sizeof(settings->wifi_ssid));
+    settings->wifi_password[0] = '\0';
+    strncpy(settings->hostname, "esp-lestn", sizeof(settings->hostname));
+
+    // Настройки датчиков HC-SR04
+    settings->sensor_type = 0; // 0 = PIR / Оптика, 1 = HC-SR04
+    settings->sensor_bottom_echo_gpio = 18;
+    settings->sensor_top_echo_gpio = 19;
+    settings->ultrasonic_trigger_distance_cm = 80;
+    settings->ultrasonic_max_distance_cm = 200;
+
+    // Астрономическое время
+    settings->ntp_enabled = true;
+    strncpy(settings->ntp_server, "pool.ntp.org", sizeof(settings->ntp_server));
+    settings->timezone_offset = 3;
+    settings->latitude = 55.7558f;
+    settings->longitude = 37.6173f;
+    settings->schedule_mode = 0;
+    settings->sunset_offset_min = 0;
+    settings->sunrise_offset_min = 0;
+    settings->fixed_on_hour = 22;
+    settings->fixed_on_minute = 0;
+    settings->fixed_off_hour = 7;
+    settings->fixed_off_minute = 0;
+}
+
+esp_err_t settings_load(staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "No saved settings found in NVS, using defaults");
+        return err;
+    }
+
+    size_t required_size = sizeof(staircase_settings_t);
+    err = nvs_get_blob(nvs_h, "config", settings, &required_size);
+    nvs_close(nvs_h);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Settings successfully loaded from NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to read blob from NVS: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t settings_save(const staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_set_blob(nvs_h, "config", settings, sizeof(staircase_settings_t));
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_h);
+        ESP_LOGI(TAG, "Settings successfully saved and committed to NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to write blob to NVS: %s", esp_err_to_name(err));
+    }
+
+    nvs_close(nvs_h);
+    return err;
+}
+
+esp_err_t settings_reset_defaults(staircase_settings_t *settings)
+{
+    settings_init(settings);
+    return settings_save(settings);
+}`
+  },
+  {
+    name: 'wifi_manager.c',
+    path: 'main/wifi_manager.c',
+    category: 'driver',
+    description: 'Управление Wi-Fi (автопереключение STA -> AP, mDNS, статический/DHCP IP).',
+    code: `#include "wifi_manager.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "mdns.h"
+
+static const char *TAG = "WIFI_MGR";
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static EventGroupHandle_t wifi_event_group;
+static staircase_settings_t *cfg = NULL;
+static bool is_ap = true;
+static char current_ip[16] = "192.168.4.1";
+static int retry_num = 0;
+#define MAX_STA_RETRIES 5
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (retry_num < MAX_STA_RETRIES) {
+            esp_wifi_connect();
+            retry_num++;
+            ESP_LOGI(TAG, "Retrying Wi-Fi STA connection (%d/%d)...", retry_num, MAX_STA_RETRIES);
+        } else {
+            xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+            ESP_LOGW(TAG, "Failed to connect to STA. Falling back to AP mode.");
+        }
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        snprintf(current_ip, sizeof(current_ip), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Connected to Wi-Fi! IP: %s", current_ip);
+        printf("\r\n===================================================\r\n");
+        printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
+        printf(" >>>  IP: %s  <<<\r\n", current_ip);
+        printf(" Веб-интерфейс: http://%s\r\n", current_ip);
+        printf("===================================================\r\n\r\n");
+        fflush(stdout);
+        retry_num = 0;
+        is_ap = false;
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+esp_err_t wifi_manager_start_ap(void)
+{
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = "ESP-Lestn",
+            .ssid_len = strlen("ESP-Lestn"),
+            .channel = 1,
+            .password = "",
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_OPEN
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    is_ap = true;
+    strncpy(current_ip, "192.168.4.1", sizeof(current_ip));
+    ESP_LOGI(TAG, "Access Point started: SSID='ESP-Lestn', IP=%s", current_ip);
+    return ESP_OK;
+}
+
+static esp_err_t start_sta_internal(void)
+{
+    retry_num = 0;
+    wifi_config_t wifi_config = {0};
+    strncpy((char*)wifi_config.sta.ssid, cfg->wifi_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, cfg->wifi_password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Connecting to Wi-Fi SSID: '%s'...", cfg->wifi_ssid);
+
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            pdMS_TO_TICKS(15000));
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to SSID:%s", cfg->wifi_ssid);
+        return ESP_OK;
+    } else {
+        ESP_LOGW(TAG, "Falling back to AP mode");
+        esp_wifi_stop();
+        return wifi_manager_start_ap();
+    }
+}
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings)
+{
+    cfg = settings;
+    wifi_event_group = xEventGroupCreate();
+
+    esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    // Инициализация mDNS
+    mdns_init();
+    mdns_hostname_set(cfg->hostname[0] ? cfg->hostname : "esp-lestn");
+    mdns_instance_name_set("ESP32 Smart Staircase");
+
+    if (cfg->wifi_ssid[0] != '\0' && strcmp(cfg->wifi_ssid, "ESP-Lestn") != 0) {
+        return start_sta_internal();
+    } else {
+        return wifi_manager_start_ap();
+    }
+}
+
+bool wifi_manager_is_connected(void)
+{
+    return !is_ap;
+}
+
+const char *wifi_manager_get_ip(void)
+{
+    return current_ip;
+}
+
+bool wifi_manager_is_ap_mode(void)
+{
+    return is_ap;
+}
+
+esp_err_t wifi_manager_reconnect_sta(void)
+{
+    if (cfg == NULL || cfg->wifi_ssid[0] == '\0') return ESP_ERR_INVALID_STATE;
+    return start_sta_internal();
+}`
+  },
+  {
+    name: 'wifi_manager.h',
+    path: 'main/wifi_manager.h',
+    category: 'driver',
+    description: 'Интерфейс управления Wi-Fi подсистемой.',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings);
+bool wifi_manager_is_connected(void);
+const char *wifi_manager_get_ip(void);
+bool wifi_manager_is_ap_mode(void);
+esp_err_t wifi_manager_start_ap(void);
+esp_err_t wifi_manager_reconnect_sta(void);`
+  },
+  {
+    name: 'time_astro.h',
+    path: 'main/time_astro.h',
+    category: 'core',
+    description: 'Заголовочный файл сервиса времени NTP и астрономического расчета заката/восхода солнца (NOAA).',
+    code: `#ifndef TIME_ASTRO_H
+#define TIME_ASTRO_H
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*time_astro_state_cb_t)(bool is_night);
+
+typedef struct {
+    bool synced;
+    char time_str[32];
+    char sunrise_str[16];
+    char sunset_str[16];
+    bool is_night_time;
+    char next_switch_str[32];
+} time_astro_status_t;
+
+esp_err_t time_astro_init(staircase_settings_t *settings, time_astro_state_cb_t cb);
+void time_astro_apply_settings(const staircase_settings_t *settings);
+bool time_astro_is_synced(void);
+bool time_astro_is_night(void);
+void time_astro_get_status(time_astro_status_t *status);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // TIME_ASTRO_H`
+  },
+  {
+    name: 'time_astro.c',
+    path: 'main/time_astro.c',
+    category: 'core',
+    description: 'Реализация SNTP клиента, алгоритма NOAA для заката/восхода и фоновой задачи переключения режимов.',
+    code: `#include "time_astro.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
+#include <math.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_sntp.h"
+
+static const char *TAG = "TIME_ASTRO";
+
+static staircase_settings_t *cfg = NULL;
+static time_astro_state_cb_t state_callback = NULL;
+static bool sntp_initialized = false;
+static bool time_is_synced = false;
+static bool current_night_state = false;
+
+// Расчет времени заката и восхода по алгоритму NOAA
+static void calculate_solar_times(time_t current_time, float lat, float lon, int tz_offset,
+                                  int *sunrise_min, int *sunset_min)
+{
+    struct tm timeinfo;
+    localtime_r(&current_time, &timeinfo);
+    int day_of_year = timeinfo.tm_yday + 1;
+
+    const double PI_D = 3.14159265358979323846;
+    const double DEG2RAD = PI_D / 180.0;
+    const double RAD2DEG = 180.0 / PI_D;
+
+    double B = (360.0 / 365.0) * (day_of_year - 81) * DEG2RAD;
+    double eot = 9.87 * sin(2 * B) - 7.53 * cos(B) - 1.5 * sin(B);
+    double decl = 23.45 * sin((360.0 / 365.0) * (day_of_year - 81) * DEG2RAD);
+    double decl_rad = decl * DEG2RAD;
+    double lat_rad = (double)lat * DEG2RAD;
+
+    double zenith = 90.8333 * DEG2RAD;
+    double cos_ha = (cos(zenith) - sin(lat_rad) * sin(decl_rad)) / (cos(lat_rad) * cos(decl_rad));
+    if (cos_ha > 1.0) cos_ha = 1.0;
+    if (cos_ha < -1.0) cos_ha = -1.0;
+
+    double ha_deg = acos(cos_ha) * RAD2DEG;
+    double ha_hours = ha_deg / 15.0;
+
+    double solar_noon = 12.0 - ((double)lon / 15.0) - (eot / 60.0) + (double)tz_offset;
+    double sunrise_hour = solar_noon - ha_hours;
+    double sunset_hour = solar_noon + ha_hours;
+
+    while (sunrise_hour < 0.0) sunrise_hour += 24.0;
+    while (sunrise_hour >= 24.0) sunrise_hour -= 24.0;
+    while (sunset_hour < 0.0) sunset_hour += 24.0;
+    while (sunset_hour >= 24.0) sunset_hour -= 24.0;
+
+    if (sunrise_min) *sunrise_min = (int)round(sunrise_hour * 60.0);
+    if (sunset_min) *sunset_min = (int)round(sunset_hour * 60.0);
+}
+
+// Фоновая задача проверки времени и переключения дня/ночи
+static void astro_task(void *arg)
+{
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        if (!cfg) continue;
+
+        time_t now;
+        time(&now);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+
+        if (timeinfo.tm_year > (2020 - 1900)) {
+            time_is_synced = true;
+        }
+
+        bool should_be_night = false;
+        int cur_min = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+
+        if (cfg->schedule_mode == 0 && time_is_synced) {
+            int sunrise_m = 360, sunset_m = 1200;
+            calculate_solar_times(now, cfg->latitude, cfg->longitude, cfg->timezone_offset, &sunrise_m, &sunset_m);
+            int on_time = sunset_m + cfg->sunset_offset_min;
+            int off_time = sunrise_m + cfg->sunrise_offset_min;
+            while (on_time < 0) on_time += 1440;
+            while (on_time >= 1440) on_time -= 1440;
+            while (off_time < 0) off_time += 1440;
+            while (off_time >= 1440) off_time -= 1440;
+
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 1 && time_is_synced) {
+            int on_time = cfg->fixed_on_hour * 60 + cfg->fixed_on_minute;
+            int off_time = cfg->fixed_off_hour * 60 + cfg->fixed_off_minute;
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 2) {
+            should_be_night = true;
+        } else {
+            should_be_night = false;
+        }
+
+        if (should_be_night != current_night_state) {
+            current_night_state = should_be_night;
+            if (state_callback) state_callback(current_night_state);
+        }
+    }
+}`
+  },
+  {
+    name: 'web_ota.h',
+    path: 'main/web_ota.h',
+    category: 'web',
+    description: 'Интерфейс обновления прошивки ESP32 по воздуху (OTA по Wi-Fi через HTTP POST).',
+    code: `#ifndef WEB_OTA_H
+#define WEB_OTA_H
+
+#include "web_common.h"
+#include "esp_ota_ops.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Обработчик GET запроса для отображения HTML страницы OTA обновления */
+esp_err_t ota_page_handler(httpd_req_t *req);
+
+/* Обработчик POST запроса для прошивки бинарного файла (.bin) по воздуху (OTA) */
+esp_err_t ota_post_handler(httpd_req_t *req);
+
+/* Обработчик GET запроса для получения информации о текущих разделах OTA и версии */
+esp_err_t ota_status_handler(httpd_req_t *req);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // WEB_OTA_H`
+  },
+  {
+    name: 'web_ota.c',
+    path: 'main/web_ota.c',
+    category: 'web',
+    description: 'Драйвер OTA прошивки: прием .bin через веб-сервер, запись во второй OTA слот и перезагрузка.',
+    code: `#include "web_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+
+static const char *TAG = "WEB_OTA";
+#define OTA_BUFF_SIZE 1024
+
+esp_err_t ota_page_handler(httpd_req_t *req)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+    esp_app_desc_t app_info;
+    if (esp_ota_get_partition_description(running, &app_info) != ESP_OK) {
+        strncpy(app_info.version, "2.0.0", sizeof(app_info.version));
+    }
+
+    web_send_html_header(req, "Обновление (OTA)");
+
+    // 1. Stats and manual file upload card
+    char html[2048];
+    snprintf(html, sizeof(html),
+        "<div class='card'>"
+        "<h2>🔄 Беспроводное обновление (OTA)</h2>"
+        "<p style='font-size:13px;color:#94a3b8;margin-bottom:12px'>"
+        "Загрузка файла прошивки <code>ESP_lestn_v2.bin</code> прямо через браузер без подключения USB кабеля."
+        "</p>"
+        "<div class='grid'>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Текущий слот</div>"
+        "<strong style='color:#38bdf8'>%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Слот для записи</div>"
+        "<strong style='color:#34d399'>%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Версия</div>"
+        "<strong id='cur_ver_tag' style='color:#f8fafc'>v%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Свободно RAM</div>"
+        "<strong style='color:#fbbf24'>%lu КБ</strong>"
+        "</div>"
+        "</div>"
+        "</div>",
+        running ? running->label : "ota_0",
+        update ? update->label : "ota_1",
+        app_info.version,
+        (unsigned long)(esp_get_free_heap_size() / 1024)
+    );
+    httpd_resp_sendstr_chunk(req, html);
+
+    // 2. Direct GitHub Releases Updater Card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card' style='border-color:#0284c7'>"
+        "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px'>"
+        "<h3 style='margin:0;color:#38bdf8'>📦 Обновление из GitHub Releases</h3>"
+        "<button class='btn btn-sm' onclick='loadGitHubReleases()'>🔄 Проверить версии</button>"
+        "</div>"
+        "<p style='font-size:12px;color:#94a3b8;margin-bottom:12px'>"
+        "Выберите нужную версию прошивки из репозитория <b>geminibitok-oss/ESP-v2</b>."
+        "</p>"
+        "<div id='gh_status' style='font-size:12px;color:#cbd5e1;margin-bottom:10px;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155'>"
+        "Загрузка версий..."
+        "</div>"
+        "<div style='margin-bottom:12px'>"
+        "<label for='rel_select' style='font-size:12px;color:#94a3b8'>Доступные релизы:</label>"
+        "<select id='rel_select' style='margin-bottom:8px' onchange='onSelectRelease()'>"
+        "<option value='latest'>latest (Свежая сборка)</option>"
+        "</select>"
+        "</div>"
+        "<div style='display:flex;gap:8px;flex-wrap:wrap'>"
+        "<a id='gh_dl_link' class='btn' style='flex:1;background:#0284c7;text-align:center;text-decoration:none' target='_blank' download>📥 Скачать ESP_lestn_v2.bin</a>"
+        "</div>"
+        "<div style='font-size:11px;color:#94a3b8;margin-top:8px'>"
+        "💡 Нажмите <b>«📥 Скачать ESP_lestn_v2.bin»</b>, затем выберите скачанный файл в блоке ниже и нажмите <b>«🚀 Загрузить и обновить ESP32»</b>."
+        "</div>"
+        "</div>"
+    );
+
+    // 3. Local file upload card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card'>"
+        "<h3>📁 Загрузить файл прошивки в память ESP32</h3>"
+        "<div style='margin-top:10px'>"
+        "<input type='file' id='ota_file' accept='.bin' style='margin-bottom:12px'>"
+        "<button id='up_btn' class='btn' style='width:100%;background:#16a34a' onclick='startOTA()'>🚀 Загрузить и обновить ESP32</button>"
+        "</div>"
+        "<div id='prg_box' style='display:none;margin-top:14px'>"
+        "<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px'>"
+        "<span id='st_txt'>Запись во Flash память...</span><span id='pct'>0%</span>"
+        "</div>"
+        "<div style='background:#0f172a;height:8px;border-radius:4px;overflow:hidden;border:1px solid #334155'>"
+        "<div id='bar' style='background:#0284c7;width:0%;height:100%;transition:width 0.2s'></div>"
+        "</div>"
+        "</div>"
+        "</div>"
+    );
+
+    // 4. Client-side JavaScript logic
+    httpd_resp_sendstr_chunk(req,
+        "<script>"
+        "var ghReleases=[];"
+        "function updateDlLink(tag){"
+        "var a=document.getElementById('gh_dl_link');"
+        "a.href='https://github.com/geminibitok-oss/ESP-v2/releases/download/'+tag+'/ESP_lestn_v2.bin';"
+        "a.innerHTML='📥 Скачать ESP_lestn_v2.bin ('+tag+')';"
+        "}"
+        "function loadGitHubReleases(){"
+        "var st=document.getElementById('gh_status');st.innerHTML='⏳ Запрос релизов с api.github.com...';"
+        "var xhr=new XMLHttpRequest();xhr.open('GET','https://api.github.com/repos/geminibitok-oss/ESP-v2/releases?per_page=15',true);"
+        "xhr.onload=function(){if(xhr.status==200){try{"
+        "ghReleases=JSON.parse(xhr.responseText);"
+        "var sel=document.getElementById('rel_select');sel.innerHTML='';"
+        "if(ghReleases&&ghReleases.length>0){"
+        "for(var i=0;i<ghReleases.length;i++){"
+        "var r=ghReleases[i];"
+        "var opt=document.createElement('option');opt.value=r.tag_name;"
+        "opt.text=r.tag_name+(r.tag_name==='latest'?' (Свежая автосборка)':' - '+(r.name||'Релиз'));"
+        "sel.appendChild(opt);"
+        "}"
+        "updateDlLink(ghReleases[0].tag_name);"
+        "st.innerHTML='✅ Найдено релизов: <b>'+ghReleases.length+'</b>. Выберите версию и скачайте бинарник в 1 клик.';"
+        "}else{"
+        "st.innerHTML='ℹ️ Доступен базовый релиз latest.';"
+        "updateDlLink('latest');"
+        "}"
+        "}catch(e){st.innerHTML='Ошибка парсинга: '+e;}}"
+        "else{st.innerHTML='⚠️ GitHub API ответил: '+xhr.status;updateDlLink('latest');}};"
+        "xhr.onerror=function(){st.innerHTML='⚠️ Нет прямого доступа к api.github.com.';updateDlLink('latest');};"
+        "xhr.send();"
+        "}"
+        "function onSelectRelease(){"
+        "var sel=document.getElementById('rel_select');"
+        "updateDlLink(sel.value||'latest');"
+        "}"
+        "function startOTA(){"
+        "var f=document.getElementById('ota_file').files[0];"
+        "if(!f){alert('Пожалуйста, выберите .bin файл');return;}"
+        "var b=document.getElementById('up_btn');b.disabled=true;"
+        "var p=document.getElementById('prg_box');p.style.display='block';"
+        "var bar=document.getElementById('bar');var pct=document.getElementById('pct');var st=document.getElementById('st_txt');"
+        "var xhr=new XMLHttpRequest();xhr.open('POST','/api/ota',true);"
+        "xhr.upload.onprogress=function(e){if(e.lengthComputable){var pc=Math.round((e.loaded/e.total)*100);bar.style.width=pc+'%';pct.innerText=pc+'%';}};"
+        "xhr.onload=function(){if(xhr.status==200){st.innerText='Успех! Контроллер перезагружается...';bar.style.background='#16a34a';"
+        "var c=15;var ti=setInterval(function(){st.innerText='Перезагрузка... ('+c+'с)';if(--c<=0){clearInterval(ti);location.href='/';}},1000);"
+        "}else{alert('Ошибка OTA: '+xhr.responseText);b.disabled=false;}};"
+        "xhr.onerror=function(){alert('Сбой сети при передаче OTA');b.disabled=false;};"
+        "xhr.send(f);"
+        "}"
+        "setTimeout(loadGitHubReleases, 300);"
+        "</script>"
+    );
+
+    web_send_html_footer(req);
+    return ESP_OK;
+}
+
+esp_err_t ota_status_handler(httpd_req_t *req)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+    esp_app_desc_t running_app_info;
+    if (esp_ota_get_partition_description(running, &running_app_info) != ESP_OK) {
+        strncpy(running_app_info.version, "2.0.0", sizeof(running_app_info.version));
+        strncpy(running_app_info.project_name, "ESP_lestn_v2", sizeof(running_app_info.project_name));
+    }
+
+    char resp[512];
+    snprintf(resp, sizeof(resp),
+        "{"
+        "\"project_name\":\"%s\","
+        "\"version\":\"%s\","
+        "\"running_partition\":\"%s\","
+        "\"running_address\":\"0x%lx\","
+        "\"boot_partition\":\"%s\","
+        "\"next_update_partition\":\"%s\","
+        "\"free_heap\":%lu"
+        "}",
+        running_app_info.project_name,
+        running_app_info.version,
+        running ? running->label : "unknown",
+        running ? (unsigned long)running->address : 0,
+        configured ? configured->label : "unknown",
+        update ? update->label : "unknown",
+        (unsigned long)esp_get_free_heap_size()
+    );
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t ota_post_handler(httpd_req_t *req)
+{
+    esp_ota_handle_t update_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+
+    ESP_LOGI(TAG, "Starting Over-The-Air (OTA) firmware update...");
+
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "Passive OTA partition not found");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA partition not found");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%lx (label: %s)",
+             update_partition->subtype, (unsigned long)update_partition->address, update_partition->label);
+
+    int total_len = req->content_len;
+    if (total_len <= 0) {
+        ESP_LOGE(TAG, "Content-Length not specified or invalid");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length header required");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_begin failed");
+        return ESP_FAIL;
+    }
+
+    char *ota_write_data = (char *)malloc(OTA_BUFF_SIZE);
+    if (!ota_write_data) {
+        ESP_LOGE(TAG, "Failed to allocate OTA buffer");
+        esp_ota_abort(update_handle);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    int remaining = total_len;
+    bool is_first_chunk = true;
+
+    while (remaining > 0) {
+        int to_read = remaining > OTA_BUFF_SIZE ? OTA_BUFF_SIZE : remaining;
+        int received = httpd_req_recv(req, ota_write_data, to_read);
+        if (received <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue; // Retry on timeout
+            }
+            ESP_LOGE(TAG, "File receive error: %d", received);
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA transfer interrupted");
+            return ESP_FAIL;
+        }
+
+        if (is_first_chunk) {
+            is_first_chunk = false;
+            // Validate magic byte (0xE9 for ESP32 image)
+            if ((uint8_t)ota_write_data[0] != 0xE9) {
+                ESP_LOGE(TAG, "Invalid image magic byte: 0x%02X (expected 0xE9)", (uint8_t)ota_write_data[0]);
+                free(ota_write_data);
+                esp_ota_abort(update_handle);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid firmware binary header");
+                return ESP_FAIL;
+            }
+        }
+
+        err = esp_ota_write(update_handle, (const void *)ota_write_data, received);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed (%s)", esp_err_to_name(err));
+            free(ota_write_data);
+            esp_ota_abort(update_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
+            return ESP_FAIL;
+        }
+
+        remaining -= received;
+    }
+
+    free(ota_write_data);
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware validation failed");
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to switch boot partition");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA upgrade successful! Next boot partition: %s. Scheduling reboot in 1.5s...", update_partition->label);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    const char *resp = "{\"status\":\"success\",\"message\":\"Firmware successfully flashed. Rebooting ESP32...\"}";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+    // Schedule reboot after sending response
+    web_schedule_restart(1500);
+
+    return ESP_OK;
+}
+`
+  },
+  {
+    name: 'web_server.c',
+    path: 'main/web_server.c',
+    category: 'web',
+    description: 'Главная точка регистрации эндпоинтов и запуска HTTP сервера ESP-IDF.',
+    code: `#include "web_server.h"
+#include "web_routes.h"
+#include "web_common.h"
+
+static const char *TAG = "WEB_SERVER";
+static httpd_handle_t server = NULL;
+
+extern void web_index_set_settings(staircase_settings_t *settings);
+extern void web_settings_set_settings(staircase_settings_t *settings);
+extern void web_wifi_set_settings(staircase_settings_t *settings);
+extern void web_api_set_settings(staircase_settings_t *settings);
+
+esp_err_t web_server_start(staircase_settings_t *settings)
+{
+    web_index_set_settings(settings);
+    web_settings_set_settings(settings);
+    web_wifi_set_settings(settings);
+    web_api_set_settings(settings);
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_uri_handlers = 16;
+    config.stack_size = 8192;
+    config.lru_purge_enable = true;
+    config.max_resp_headers = 16;
+
+    ESP_LOGI(TAG, "Starting HTTP Web Server on port %d...", config.server_port);
+
+    esp_err_t err = httpd_start(&server, &config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start HTTP server: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    httpd_uri_t uri_index = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_get = { .uri = "/settings", .method = HTTP_GET, .handler = settings_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_settings_post = { .uri = "/settings", .method = HTTP_POST, .handler = settings_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_get = { .uri = "/wifi", .method = HTTP_GET, .handler = wifi_get_handler, .user_ctx = NULL };
+    httpd_uri_t uri_wifi_post = { .uri = "/wifi", .method = HTTP_POST, .handler = wifi_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_state = { .uri = "/api/state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+    httpd_uri_t uri_api_trigger = { .uri = "/api/trigger", .method = HTTP_GET, .handler = api_trigger_handler, .user_ctx = NULL };
+
+    /* OTA Обновление прошивки */
+    httpd_uri_t uri_ota_page = { .uri = "/update", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_page_alt = { .uri = "/ota", .method = HTTP_GET, .handler = ota_page_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_post = { .uri = "/api/ota", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_post_update = { .uri = "/update", .method = HTTP_POST, .handler = ota_post_handler, .user_ctx = NULL };
+    httpd_uri_t uri_ota_status = { .uri = "/api/ota/status", .method = HTTP_GET, .handler = ota_status_handler, .user_ctx = NULL };
+
+    /* Для обратной совместимости */
+    httpd_uri_t uri_led_state = { .uri = "/led-state", .method = HTTP_GET, .handler = api_state_handler, .user_ctx = NULL };
+
+    httpd_register_uri_handler(server, &uri_index);
+    httpd_register_uri_handler(server, &uri_settings_get);
+    httpd_register_uri_handler(server, &uri_settings_post);
+    httpd_register_uri_handler(server, &uri_wifi_get);
+    httpd_register_uri_handler(server, &uri_wifi_post);
+    httpd_register_uri_handler(server, &uri_api_state);
+    httpd_register_uri_handler(server, &uri_api_trigger);
+    httpd_register_uri_handler(server, &uri_ota_page);
+    httpd_register_uri_handler(server, &uri_ota_page_alt);
+    httpd_register_uri_handler(server, &uri_ota_post);
+    httpd_register_uri_handler(server, &uri_ota_post_update);
+    httpd_register_uri_handler(server, &uri_ota_status);
+    httpd_register_uri_handler(server, &uri_led_state);
+
+    ESP_LOGI(TAG, "Web server started with endpoints: /, /settings, /wifi, /update, /api/state, /api/ota");
+    return ESP_OK;
+}`
+  },
+  {
+    name: 'web_server.h',
+    path: 'main/web_server.h',
+    category: 'web',
+    description: 'Интерфейс веб-сервера управления.',
+    code: `#pragma once
+
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t web_server_start(staircase_settings_t *settings);`
+  },
+  {
+    name: 'sensors.h',
+    path: 'main/sensors.h',
+    category: 'driver',
+    description: 'Интерфейс драйвера датчиков присутствия (цифровые PIR/оптические и ультразвуковые HC-SR04).',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t sensors_init(const staircase_settings_t *settings);
+bool sensor_bottom_active(void);
+bool sensor_top_active(void);
+int sensor_bottom_level(void);
+int sensor_top_level(void);
+
+// Функции для работы с ультразвуковыми дальномерами HC-SR04
+uint16_t sensor_bottom_distance_cm(void);
+uint16_t sensor_top_distance_cm(void);
+bool sensor_is_ultrasonic(void);
+void sensors_reset_state(void);`
+  },
+  {
+    name: 'sensors.c',
+    path: 'main/sensors.c',
+    category: 'driver',
+    description: 'Драйвер датчиков присутствия: цифровой режим (PIR/оптика с подавлением дребезга) и ультразвуковой режим HC-SR04 (эхолокация в см с фильтрацией шумов).',
+    code: `#include "sensors.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "SENSORS";
+
+static staircase_settings_t cfg;
+static int64_t last_bottom_change_us = 0;
+static int64_t last_top_change_us = 0;
+static bool last_bottom_state = false;
+static bool last_top_state = false;
+
+static uint16_t bottom_dist_cm = 999;
+static uint16_t top_dist_cm = 999;
+
+// Измерение расстояния дальномером HC-SR04 (в сантиметрах)
+static uint16_t measure_hcsr04_distance(gpio_num_t trig_pin, gpio_num_t echo_pin, uint16_t max_dist_cm)
+{
+    // 1. Короткий импульс TRIG 10 мкс
+    gpio_set_level(trig_pin, 0);
+    esp_rom_delay_us(4);
+    gpio_set_level(trig_pin, 1);
+    esp_rom_delay_us(10);
+    gpio_set_level(trig_pin, 0);
+
+    // 2. Ожидание начала импульса ECHO (HIGH) с таймаутом ~10 мс
+    int64_t start_wait = esp_timer_get_time();
+    while (gpio_get_level(echo_pin) == 0) {
+        if ((esp_timer_get_time() - start_wait) > 10000) {
+            return 999; // Таймаут старта
+        }
+    }
+
+    // 3. Измерение длительности импульса ECHO
+    int64_t echo_start = esp_timer_get_time();
+    int64_t max_echo_time = echo_start + (int64_t)max_dist_cm * 58 + 2000;
+
+    while (gpio_get_level(echo_pin) == 1) {
+        if (esp_timer_get_time() > max_echo_time) {
+            return 999; // Превышение максимальной дистанции
+        }
+    }
+    int64_t echo_end = esp_timer_get_time();
+    int64_t duration_us = echo_end - echo_start;
+
+    // Скорость звука ~ 343 м/с -> 1 см за 58.2 мкс
+    uint16_t dist = (uint16_t)(duration_us / 58);
+    if (dist < 2 || dist > max_dist_cm) {
+        return 999;
+    }
+    return dist;
+}
+
+// Фоновая задача опроса ультразвуковых датчиков HC-SR04
+static void ultrasonic_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "HC-SR04 Ultrasonic background polling task started");
+
+    while (1)
+    {
+        if (cfg.sensor_type == 1) {
+            // Опрос нижнего датчика HC-SR04 (TRIG = cfg.sensor_bottom_gpio, ECHO = cfg.sensor_bottom_echo_gpio)
+            uint16_t d_bot = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_bottom_gpio,
+                (gpio_num_t)cfg.sensor_bottom_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            bottom_dist_cm = d_bot;
+            last_bottom_state = (d_bot > 0 && d_bot <= cfg.ultrasonic_trigger_distance_cm);
+
+            vTaskDelay(pdMS_TO_TICKS(25)); // Задержка между ультразвуковыми пингами
+
+            // Опрос верхнего датчика HC-SR04 (TRIG = cfg.sensor_top_gpio, ECHO = cfg.sensor_top_echo_gpio)
+            uint16_t d_top = measure_hcsr04_distance(
+                (gpio_num_t)cfg.sensor_top_gpio,
+                (gpio_num_t)cfg.sensor_top_echo_gpio,
+                cfg.ultrasonic_max_distance_cm
+            );
+            top_dist_cm = d_top;
+            last_top_state = (d_top > 0 && d_top <= cfg.ultrasonic_trigger_distance_cm);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+esp_err_t sensors_init(const staircase_settings_t *settings)
+{
+    cfg = *settings;
+
+    if (cfg.sensor_type == 1) {
+        // Конфигурация для HC-SR04:
+        // TRIG пины как ВЫХОДЫ
+        gpio_config_t trig_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&trig_conf));
+        gpio_set_level((gpio_num_t)cfg.sensor_bottom_gpio, 0);
+        gpio_set_level((gpio_num_t)cfg.sensor_top_gpio, 0);
+
+        // ECHO пины как ВХОДЫ с подтяжкой к земле
+        gpio_config_t echo_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_echo_gpio) | (1ULL << cfg.sensor_top_echo_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_ENABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&echo_conf));
+
+        xTaskCreate(ultrasonic_task, "ultrasonic_task", 3072, NULL, 4, NULL);
+
+        ESP_LOGI(TAG, "HC-SR04 Sensors initialized: Bottom TRIG=%d/ECHO=%d, Top TRIG=%d/ECHO=%d, Trigger=%d cm",
+                 cfg.sensor_bottom_gpio, cfg.sensor_bottom_echo_gpio,
+                 cfg.sensor_top_gpio, cfg.sensor_top_echo_gpio,
+                 cfg.ultrasonic_trigger_distance_cm);
+    } else {
+        // Конфигурация для цифровых PIR / оптических датчиков
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << cfg.sensor_bottom_gpio) | (1ULL << cfg.sensor_top_gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = cfg.sensor_active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
+            .pull_down_en = cfg.sensor_active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        ESP_LOGI(TAG, "PIR/Optical Sensors initialized: Bottom GPIO %d, Top GPIO %d (Active: %s, Debounce: %d ms)",
+                 cfg.sensor_bottom_gpio, cfg.sensor_top_gpio,
+                 cfg.sensor_active_high ? "HIGH" : "LOW",
+                 cfg.sensor_debounce_ms);
+    }
+
+    return ESP_OK;
+}
+
+int sensor_bottom_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_bottom_gpio);
+}
+
+int sensor_top_level(void)
+{
+    return gpio_get_level((gpio_num_t)cfg.sensor_top_gpio);
+}
+
+uint16_t sensor_bottom_distance_cm(void)
+{
+    return bottom_dist_cm;
+}
+
+uint16_t sensor_top_distance_cm(void)
+{
+    return top_dist_cm;
+}
+
+bool sensor_is_ultrasonic(void)
+{
+    return (cfg.sensor_type == 1);
+}
+
+bool sensor_bottom_active(void)
+{
+    if (cfg.sensor_type == 1) {
+        return last_bottom_state;
+    }
+
+    int level = sensor_bottom_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_bottom_state) {
+        if ((now_us - last_bottom_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_bottom_state = raw_active;
+            last_bottom_change_us = now_us;
+        }
+    }
+    return last_bottom_state;
+}
+
+bool sensor_top_active(void)
+{
+    if (cfg.sensor_type == 1) {
+        return last_top_state;
+    }
+
+    int level = sensor_top_level();
+    bool raw_active = cfg.sensor_active_high ? (level == 1) : (level == 0);
+    int64_t now_us = esp_timer_get_time();
+
+    if (raw_active != last_top_state) {
+        if ((now_us - last_top_change_us) >= (int64_t)cfg.sensor_debounce_ms * 1000) {
+            last_top_state = raw_active;
+            last_top_change_us = now_us;
+        }
+    }
+    return last_top_state;
+}
+
+void sensors_reset_state(void)
+{
+    last_bottom_state = false;
+    last_top_state = false;
+    bottom_dist_cm = 999;
+    top_dist_cm = 999;
+    ESP_LOGI(TAG, "Sensors manually reset to idle state");
+}`
+  },
+  {
+    name: 'settings.h',
+    path: 'main/settings.h',
+    category: 'core',
+    description: 'Структура конфигурации и интерфейс сохранения в энергонезависимую память (NVS).',
+    code: `#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+
+typedef struct {
+    uint16_t steps;
+    uint16_t pixels_per_step;
+    uint8_t brightness;
+    uint8_t night_brightness;
+    uint16_t step_on_time_ms;
+    uint16_t step_off_time_ms;
+    uint16_t hold_time_ms;
+    uint8_t color_r;
+    uint8_t color_g;
+    uint8_t color_b;
+    uint8_t led_gpio;
+    uint8_t sensor_bottom_gpio;
+    uint8_t sensor_top_gpio;
+    bool sensor_active_high;
+    uint16_t sensor_debounce_ms;
+    bool night_mode;
+    // Управление первой и последней ступенью
+    bool enable_first_step;
+    bool enable_last_step;
+    bool night_first_step;
+    bool night_last_step;
+    char wifi_ssid[32];
+    char wifi_password[64];
+    char hostname[32];
+    // Датчики: 0 = Цифровой PIR / Оптический, 1 = Ультразвуковой HC-SR04
+    uint8_t sensor_type;
+    uint8_t sensor_bottom_echo_gpio;
+    uint8_t sensor_top_echo_gpio;
+    uint16_t ultrasonic_trigger_distance_cm;
+    uint16_t ultrasonic_max_distance_cm;
+    // Время NTP и Астротаймер
+    bool ntp_enabled;
+    char ntp_server[64];
+    int8_t timezone_offset;
+    float latitude;
+    float longitude;
+    uint8_t schedule_mode;
+    int16_t sunset_offset_min;
+    int16_t sunrise_offset_min;
+    uint8_t fixed_on_hour;
+    uint8_t fixed_on_minute;
+    uint8_t fixed_off_hour;
+    uint8_t fixed_off_minute;
+} staircase_settings_t;
+
+void settings_init(staircase_settings_t *settings);
+esp_err_t settings_load(staircase_settings_t *settings);
+esp_err_t settings_save(const staircase_settings_t *settings);
+esp_err_t settings_reset_defaults(staircase_settings_t *settings);`
+  },
+  {
+    name: 'settings.c',
+    path: 'main/settings.c',
+    category: 'core',
+    description: 'Сохранение и загрузка настроек лестницы в ESP32 NVS.',
+    code: `#include "settings.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_log.h"
+#include <string.h>
+
+static const char *TAG = "SETTINGS";
+static const char *NVS_NAMESPACE = "stair_cfg";
+
+void settings_init(staircase_settings_t *settings)
+{
+    settings->steps = 18;
+    settings->pixels_per_step = 1;
+    settings->brightness = 80;
+    settings->night_brightness = 20;
+    settings->step_on_time_ms = 150;
+    settings->step_off_time_ms = 150;
+    settings->hold_time_ms = 5000;
+    settings->color_r = 255;
+    settings->color_g = 220;
+    settings->color_b = 180;
+    settings->led_gpio = 4;
+    settings->sensor_bottom_gpio = 23;
+    settings->sensor_top_gpio = 22;
+    settings->sensor_active_high = true;
+    settings->sensor_debounce_ms = 50;
+    settings->night_mode = false;
+    settings->enable_first_step = true;
+    settings->enable_last_step = true;
+    settings->night_first_step = true;
+    settings->night_last_step = true;
+    strncpy(settings->wifi_ssid, "ESP-Lestn", sizeof(settings->wifi_ssid));
+    settings->wifi_password[0] = '\0';
+    strncpy(settings->hostname, "esp-lestn", sizeof(settings->hostname));
+
+    // Настройки датчиков HC-SR04
+    settings->sensor_type = 0; // 0 = PIR / Оптика, 1 = HC-SR04
+    settings->sensor_bottom_echo_gpio = 18;
+    settings->sensor_top_echo_gpio = 19;
+    settings->ultrasonic_trigger_distance_cm = 80;
+    settings->ultrasonic_max_distance_cm = 200;
+
+    // Астрономическое время
+    settings->ntp_enabled = true;
+    strncpy(settings->ntp_server, "pool.ntp.org", sizeof(settings->ntp_server));
+    settings->timezone_offset = 3;
+    settings->latitude = 55.7558f;
+    settings->longitude = 37.6173f;
+    settings->schedule_mode = 0;
+    settings->sunset_offset_min = 0;
+    settings->sunrise_offset_min = 0;
+    settings->fixed_on_hour = 22;
+    settings->fixed_on_minute = 0;
+    settings->fixed_off_hour = 7;
+    settings->fixed_off_minute = 0;
+}
+
+esp_err_t settings_load(staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "No saved settings found in NVS, using defaults");
+        return err;
+    }
+
+    size_t required_size = sizeof(staircase_settings_t);
+    err = nvs_get_blob(nvs_h, "config", settings, &required_size);
+    nvs_close(nvs_h);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Settings successfully loaded from NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to read blob from NVS: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t settings_save(const staircase_settings_t *settings)
+{
+    nvs_handle_t nvs_h;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_set_blob(nvs_h, "config", settings, sizeof(staircase_settings_t));
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs_h);
+        ESP_LOGI(TAG, "Settings successfully saved and committed to NVS");
+    } else {
+        ESP_LOGE(TAG, "Failed to write blob to NVS: %s", esp_err_to_name(err));
+    }
+
+    nvs_close(nvs_h);
+    return err;
+}
+
+esp_err_t settings_reset_defaults(staircase_settings_t *settings)
+{
+    settings_init(settings);
+    return settings_save(settings);
+}`
+  },
+  {
+    name: 'wifi_manager.c',
+    path: 'main/wifi_manager.c',
+    category: 'driver',
+    description: 'Управление Wi-Fi (автопереключение STA -> AP, mDNS, статический/DHCP IP).',
+    code: `#include "wifi_manager.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "mdns.h"
+
+static const char *TAG = "WIFI_MGR";
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static EventGroupHandle_t wifi_event_group;
+static staircase_settings_t *cfg = NULL;
+static bool is_ap = true;
+static char current_ip[16] = "192.168.4.1";
+static int retry_num = 0;
+#define MAX_STA_RETRIES 5
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (retry_num < MAX_STA_RETRIES) {
+            esp_wifi_connect();
+            retry_num++;
+            ESP_LOGI(TAG, "Retrying Wi-Fi STA connection (%d/%d)...", retry_num, MAX_STA_RETRIES);
+        } else {
+            xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+            ESP_LOGW(TAG, "Failed to connect to STA. Falling back to AP mode.");
+        }
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        snprintf(current_ip, sizeof(current_ip), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Connected to Wi-Fi! IP: %s", current_ip);
+        printf("\r\n===================================================\r\n");
+        printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
+        printf(" >>>  IP: %s  <<<\r\n", current_ip);
+        printf(" Веб-интерфейс: http://%s\r\n", current_ip);
+        printf("===================================================\r\n\r\n");
+        fflush(stdout);
+        retry_num = 0;
+        is_ap = false;
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+esp_err_t wifi_manager_start_ap(void)
+{
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = "ESP-Lestn",
+            .ssid_len = strlen("ESP-Lestn"),
+            .channel = 1,
+            .password = "",
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_OPEN
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    is_ap = true;
+    strncpy(current_ip, "192.168.4.1", sizeof(current_ip));
+    ESP_LOGI(TAG, "Access Point started: SSID='ESP-Lestn', IP=%s", current_ip);
+    return ESP_OK;
+}
+
+static esp_err_t start_sta_internal(void)
+{
+    retry_num = 0;
+    wifi_config_t wifi_config = {0};
+    strncpy((char*)wifi_config.sta.ssid, cfg->wifi_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, cfg->wifi_password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Connecting to Wi-Fi SSID: '%s'...", cfg->wifi_ssid);
+
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            pdMS_TO_TICKS(15000));
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to SSID:%s", cfg->wifi_ssid);
+        return ESP_OK;
+    } else {
+        ESP_LOGW(TAG, "Falling back to AP mode");
+        esp_wifi_stop();
+        return wifi_manager_start_ap();
+    }
+}
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings)
+{
+    cfg = settings;
+    wifi_event_group = xEventGroupCreate();
+
+    esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    // Инициализация mDNS
+    mdns_init();
+    mdns_hostname_set(cfg->hostname[0] ? cfg->hostname : "esp-lestn");
+    mdns_instance_name_set("ESP32 Smart Staircase");
+
+    if (cfg->wifi_ssid[0] != '\0' && strcmp(cfg->wifi_ssid, "ESP-Lestn") != 0) {
+        return start_sta_internal();
+    } else {
+        return wifi_manager_start_ap();
+    }
+}
+
+bool wifi_manager_is_connected(void)
+{
+    return !is_ap;
+}
+
+const char *wifi_manager_get_ip(void)
+{
+    return current_ip;
+}
+
+bool wifi_manager_is_ap_mode(void)
+{
+    return is_ap;
+}
+
+esp_err_t wifi_manager_reconnect_sta(void)
+{
+    if (cfg == NULL || cfg->wifi_ssid[0] == '\0') return ESP_ERR_INVALID_STATE;
+    return start_sta_internal();
+}`
+  },
+  {
+    name: 'wifi_manager.h',
+    path: 'main/wifi_manager.h',
+    category: 'driver',
+    description: 'Интерфейс управления Wi-Fi подсистемой.',
+    code: `#pragma once
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+esp_err_t wifi_manager_init(staircase_settings_t *settings);
+bool wifi_manager_is_connected(void);
+const char *wifi_manager_get_ip(void);
+bool wifi_manager_is_ap_mode(void);
+esp_err_t wifi_manager_start_ap(void);
+esp_err_t wifi_manager_reconnect_sta(void);`
+  },
+  {
+    name: 'time_astro.h',
+    path: 'main/time_astro.h',
+    category: 'core',
+    description: 'Заголовочный файл сервиса времени NTP и астрономического расчета заката/восхода солнца (NOAA).',
+    code: `#ifndef TIME_ASTRO_H
+#define TIME_ASTRO_H
+
+#include <stdbool.h>
+#include "esp_err.h"
+#include "settings.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*time_astro_state_cb_t)(bool is_night);
+
+typedef struct {
+    bool synced;
+    char time_str[32];
+    char sunrise_str[16];
+    char sunset_str[16];
+    bool is_night_time;
+    char next_switch_str[32];
+} time_astro_status_t;
+
+esp_err_t time_astro_init(staircase_settings_t *settings, time_astro_state_cb_t cb);
+void time_astro_apply_settings(const staircase_settings_t *settings);
+bool time_astro_is_synced(void);
+bool time_astro_is_night(void);
+void time_astro_get_status(time_astro_status_t *status);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // TIME_ASTRO_H`
+  },
+  {
+    name: 'time_astro.c',
+    path: 'main/time_astro.c',
+    category: 'core',
+    description: 'Реализация SNTP клиента, алгоритма NOAA для заката/восхода и фоновой задачи переключения режимов.',
+    code: `#include "time_astro.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
+#include <math.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_sntp.h"
+
+static const char *TAG = "TIME_ASTRO";
+
+static staircase_settings_t *cfg = NULL;
+static time_astro_state_cb_t state_callback = NULL;
+static bool sntp_initialized = false;
+static bool time_is_synced = false;
+static bool current_night_state = false;
+
+// Расчет времени заката и восхода по алгоритму NOAA
+static void calculate_solar_times(time_t current_time, float lat, float lon, int tz_offset,
+                                  int *sunrise_min, int *sunset_min)
+{
+    struct tm timeinfo;
+    localtime_r(&current_time, &timeinfo);
+    int day_of_year = timeinfo.tm_yday + 1;
+
+    const double PI_D = 3.14159265358979323846;
+    const double DEG2RAD = PI_D / 180.0;
+    const double RAD2DEG = 180.0 / PI_D;
+
+    double B = (360.0 / 365.0) * (day_of_year - 81) * DEG2RAD;
+    double eot = 9.87 * sin(2 * B) - 7.53 * cos(B) - 1.5 * sin(B);
+    double decl = 23.45 * sin((360.0 / 365.0) * (day_of_year - 81) * DEG2RAD);
+    double decl_rad = decl * DEG2RAD;
+    double lat_rad = (double)lat * DEG2RAD;
+
+    double zenith = 90.8333 * DEG2RAD;
+    double cos_ha = (cos(zenith) - sin(lat_rad) * sin(decl_rad)) / (cos(lat_rad) * cos(decl_rad));
+    if (cos_ha > 1.0) cos_ha = 1.0;
+    if (cos_ha < -1.0) cos_ha = -1.0;
+
+    double ha_deg = acos(cos_ha) * RAD2DEG;
+    double ha_hours = ha_deg / 15.0;
+
+    double solar_noon = 12.0 - ((double)lon / 15.0) - (eot / 60.0) + (double)tz_offset;
+    double sunrise_hour = solar_noon - ha_hours;
+    double sunset_hour = solar_noon + ha_hours;
+
+    while (sunrise_hour < 0.0) sunrise_hour += 24.0;
+    while (sunrise_hour >= 24.0) sunrise_hour -= 24.0;
+    while (sunset_hour < 0.0) sunset_hour += 24.0;
+    while (sunset_hour >= 24.0) sunset_hour -= 24.0;
+
+    if (sunrise_min) *sunrise_min = (int)round(sunrise_hour * 60.0);
+    if (sunset_min) *sunset_min = (int)round(sunset_hour * 60.0);
+}
+
+// Фоновая задача проверки времени и переключения дня/ночи
+static void astro_task(void *arg)
+{
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        if (!cfg) continue;
+
+        time_t now;
+        time(&now);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+
+        if (timeinfo.tm_year > (2020 - 1900)) {
+            time_is_synced = true;
+        }
+
+        bool should_be_night = false;
+        int cur_min = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+
+        if (cfg->schedule_mode == 0 && time_is_synced) {
+            int sunrise_m = 360, sunset_m = 1200;
+            calculate_solar_times(now, cfg->latitude, cfg->longitude, cfg->timezone_offset, &sunrise_m, &sunset_m);
+            int on_time = sunset_m + cfg->sunset_offset_min;
+            int off_time = sunrise_m + cfg->sunrise_offset_min;
+            while (on_time < 0) on_time += 1440;
+            while (on_time >= 1440) on_time -= 1440;
+            while (off_time < 0) off_time += 1440;
+            while (off_time >= 1440) off_time -= 1440;
+
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 1 && time_is_synced) {
+            int on_time = cfg->fixed_on_hour * 60 + cfg->fixed_on_minute;
+            int off_time = cfg->fixed_off_hour * 60 + cfg->fixed_off_minute;
+            if (on_time > off_time) {
+                should_be_night = (cur_min >= on_time || cur_min < off_time);
+            } else {
+                should_be_night = (cur_min >= on_time && cur_min < off_time);
+            }
+        } else if (cfg->schedule_mode == 2) {
+            should_be_night = true;
+        } else {
+            should_be_night = false;
+        }
+
+        if (should_be_night != current_night_state) {
+            current_night_state = should_be_night;
+            if (state_callback) state_callback(current_night_state);
+        }
+    }
+}`
+  },
+  {
+    name: 'web_ota.h',
+    path: 'main/web_ota.h',
+    category: 'web',
+    description: 'Интерфейс обновления прошивки ESP32 по воздуху (OTA по Wi-Fi через HTTP POST).',
+    code: `#ifndef WEB_OTA_H
+#define WEB_OTA_H
+
+#include "web_common.h"
+#include "esp_ota_ops.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Обработчик GET запроса для отображения HTML страницы OTA обновления */
+esp_err_t ota_page_handler(httpd_req_t *req);
+
+/* Обработчик POST запроса для прошивки бинарного файла (.bin) по воздуху (OTA) */
+esp_err_t ota_post_handler(httpd_req_t *req);
+
+/* Обработчик GET запроса для получения информации о текущих разделах OTA и версии */
+esp_err_t ota_status_handler(httpd_req_t *req);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // WEB_OTA_H`
+  },
+  {
+    name: 'web_ota.c',
+    path: 'main/web_ota.c',
+    category: 'web',
+    description: 'Драйвер OTA прошивки: прием .bin через веб-сервер, запись во второй OTA слот и перезагрузка.',
+    code: `#include "web_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+
+static const char *TAG = "WEB_OTA";
+#define OTA_BUFF_SIZE 1024
+
+esp_err_t ota_page_handler(httpd_req_t *req)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+
+    esp_app_desc_t app_info;
+    if (esp_ota_get_partition_description(running, &app_info) != ESP_OK) {
+        strncpy(app_info.version, "2.0.0", sizeof(app_info.version));
+    }
+
+    web_send_html_header(req, "Обновление (OTA)");
+
+    // 1. Stats and manual file upload card
+    char html[2048];
+    snprintf(html, sizeof(html),
+        "<div class='card'>"
+        "<h2>🔄 Беспроводное обновление (OTA)</h2>"
+        "<p style='font-size:13px;color:#94a3b8;margin-bottom:12px'>"
+        "Загрузка файла прошивки <code>ESP_lestn_v2.bin</code> прямо через браузер без подключения USB кабеля."
+        "</p>"
+        "<div class='grid'>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Текущий слот</div>"
+        "<strong style='color:#38bdf8'>%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Слот для записи</div>"
+        "<strong style='color:#34d399'>%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Версия</div>"
+        "<strong id='cur_ver_tag' style='color:#f8fafc'>v%s</strong>"
+        "</div>"
+        "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
+        "<div style='font-size:11px;color:#64748b'>Свободно RAM</div>"
+        "<strong style='color:#fbbf24'>%lu КБ</strong>"
+        "</div>"
+        "</div>"
+        "</div>",
+        running ? running->label : "ota_0",
+        update ? update->label : "ota_1",
+        app_info.version,
+        (unsigned long)(esp_get_free_heap_size() / 1024)
+    );
+    httpd_resp_sendstr_chunk(req, html);
+
+    // 2. Direct GitHub Releases Updater Card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card' style='border-color:#0284c7'>"
+        "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px'>"
+        "<h3 style='margin:0;color:#38bdf8'>📦 Обновление из GitHub Releases</h3>"
+        "<button class='btn btn-sm' onclick='loadGitHubReleases()'>🔄 Проверить версии</button>"
+        "</div>"
+        "<p style='font-size:12px;color:#94a3b8;margin-bottom:12px'>"
         "Автоматическая проверка релизов в репозитории <b>geminibitok-oss/ESP-v2</b> и установка выбранной версии в 1 клик."
         "</p>"
         "<div id='gh_status' style='font-size:12px;color:#cbd5e1;margin-bottom:10px;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155'>"

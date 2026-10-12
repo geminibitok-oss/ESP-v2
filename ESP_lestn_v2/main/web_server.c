@@ -21,7 +21,9 @@ esp_err_t web_server_start(staircase_settings_t *settings)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 20;
-    config.stack_size = 10240;
+    config.stack_size = 12288;
+    config.recv_wait_timeout = 30; // 30 секунд таймаут на прием больших файлов OTA
+    config.send_wait_timeout = 30;
     config.lru_purge_enable = true;
     config.max_resp_headers = 16;
 
