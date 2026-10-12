@@ -1879,16 +1879,58 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                     Команда для просмотра UART-логов в командной строке Windows через Python / esptool:
                   </p>
 
-                  <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-emerald-400">
-                    <span className="truncate">python -m serial.tools.miniterm COM3 115200</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCommand('python -m serial.tools.miniterm COM3 115200', 'miniterm')}
-                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
-                    >
-                      {copiedCmd === 'miniterm' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedCmd === 'miniterm' ? 'Скопировано' : 'Копировать'}</span>
-                    </button>
+                  {/* Step 1: Install pyserial if missing */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                      <span>Шаг 1: Установите pyserial (если пишет No module named 'serial'):</span>
+                    </div>
+                    <div className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-amber-300">
+                      <span className="truncate">pip install pyserial</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCommand('pip install pyserial', 'pip_serial')}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
+                      >
+                        {copiedCmd === 'pip_serial' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedCmd === 'pip_serial' ? 'Скопировано' : 'Копировать'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Step 2: Run miniterm */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                      <span>Шаг 2: Запуск монитора порта (для вашего COM9):</span>
+                    </div>
+                    <div className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-emerald-400">
+                      <span className="truncate">python -m serial.tools.miniterm COM9 115200</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCommand('python -m serial.tools.miniterm COM9 115200', 'miniterm')}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
+                      >
+                        {copiedCmd === 'miniterm' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedCmd === 'miniterm' ? 'Скопировано' : 'Копировать'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* PowerShell Native Alternative */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] text-slate-400">
+                      Или без установки Python (чистый PowerShell для COM9):
+                    </div>
+                    <div className="p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[10px] text-sky-300">
+                      <span className="truncate">PowerShell: [System.IO.Ports.SerialPort] COM9 115200</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCommand('$port = New-Object System.IO.Ports.SerialPort "COM9", 115200; $port.Open(); while($true){ $port.ReadLine() }', 'ps_native')}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
+                      >
+                        {copiedCmd === 'ps_native' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedCmd === 'ps_native' ? 'Скопировано' : 'Копировать'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-sky-400">
