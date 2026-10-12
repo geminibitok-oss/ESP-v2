@@ -3,7 +3,6 @@
 #include "esp_app_format.h"
 
 static const char *TAG = "WEB_OTA";
-
 #define OTA_BUFF_SIZE 1024
 
 esp_err_t ota_page_handler(httpd_req_t *req)
@@ -18,12 +17,13 @@ esp_err_t ota_page_handler(httpd_req_t *req)
 
     web_send_html_header(req, "Обновление (OTA)");
 
+    // 1. Stats and manual file upload card
     char html[2048];
     snprintf(html, sizeof(html),
         "<div class='card'>"
         "<h2>🔄 Беспроводное обновление (OTA)</h2>"
         "<p style='font-size:13px;color:#94a3b8;margin-bottom:12px'>"
-        "Загрузка нового файла прошивки <code>ESP_lestn_v2.bin</code> прямо через браузер без подключения USB кабеля."
+        "Загрузка файла прошивки <code>ESP_lestn_v2.bin</code> прямо через браузер без подключения USB кабеля."
         "</p>"
         "<div class='grid'>"
         "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
@@ -36,28 +36,118 @@ esp_err_t ota_page_handler(httpd_req_t *req)
         "</div>"
         "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
         "<div style='font-size:11px;color:#64748b'>Версия</div>"
-        "<strong style='color:#f8fafc'>v%s</strong>"
+        "<strong id='cur_ver_tag' style='color:#f8fafc'>v%s</strong>"
         "</div>"
         "<div style='background:#0f172a;padding:10px;border-radius:8px;border:1px solid #334155'>"
         "<div style='font-size:11px;color:#64748b'>Свободно RAM</div>"
         "<strong style='color:#fbbf24'>%lu КБ</strong>"
         "</div>"
         "</div>"
-        "<div style='margin-top:16px'>"
-        "<label for='ota_file'>Выберите файл прошивки (.bin):</label>"
+        "</div>",
+        running ? running->label : "ota_0",
+        update ? update->label : "ota_1",
+        app_info.version,
+        (unsigned long)(esp_get_free_heap_size() / 1024)
+    );
+    httpd_resp_sendstr_chunk(req, html);
+
+    // 2. Direct GitHub Releases Updater Card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card' style='border-color:#0284c7'>"
+        "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px'>"
+        "<h3 style='margin:0;color:#38bdf8'>📦 Обновление из GitHub Releases</h3>"
+        "<button class='btn btn-sm' onclick='loadGitHubReleases()'>🔄 Проверить версии</button>"
+        "</div>"
+        "<p style='font-size:12px;color:#94a3b8;margin-bottom:12px'>"
+        "Автоматическая проверка релизов в репозитории <b>geminibitok-oss/ESP-v2</b> и установка выбранной версии в 1 клик."
+        "</p>"
+        "<div id='gh_status' style='font-size:12px;color:#cbd5e1;margin-bottom:10px;padding:8px 12px;background:#0f172a;border-radius:6px;border:1px solid #334155'>"
+        "Нажмите «Проверить версии» для загрузки списка релизов..."
+        "</div>"
+        "<div style='margin-bottom:12px'>"
+        "<label for='rel_select' style='font-size:12px;color:#94a3b8'>Выберите какую версию установить:</label>"
+        "<select id='rel_select' style='margin-bottom:8px' onchange='onSelectRelease()'>"
+        "<option value='latest'>latest (Свежая автосборка)</option>"
+        "</select>"
+        "</div>"
+        "<button id='gh_install_btn' class='btn' style='width:100%;background:#059669' onclick='installFromGitHub()'>⚡ Установить выбранную версию из GitHub</button>"
+        "</div>"
+    );
+
+    // 3. Local file upload card
+    httpd_resp_sendstr_chunk(req,
+        "<div class='card'>"
+        "<h3>📁 Или загрузите локальный файл (.bin) с компьютера</h3>"
+        "<div style='margin-top:10px'>"
         "<input type='file' id='ota_file' accept='.bin' style='margin-bottom:12px'>"
-        "<button id='up_btn' class='btn' style='width:100%%' onclick='startOTA()'>🚀 Загрузить и обновить ESP32</button>"
+        "<button id='up_btn' class='btn' style='width:100%' onclick='startOTA()'>🚀 Загрузить и обновить ESP32</button>"
+        "</div>"
         "<div id='prg_box' style='display:none;margin-top:14px'>"
         "<div style='display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px'>"
-        "<span id='st_txt'>Запись во Flash память...</span><span id='pct'>0%%</span>"
+        "<span id='st_txt'>Запись во Flash память...</span><span id='pct'>0%</span>"
         "</div>"
         "<div style='background:#0f172a;height:8px;border-radius:4px;overflow:hidden;border:1px solid #334155'>"
-        "<div id='bar' style='background:#0284c7;width:0%%;height:100%%;transition:width 0.2s'></div>"
+        "<div id='bar' style='background:#0284c7;width:0%;height:100%;transition:width 0.2s'></div>"
         "</div>"
         "</div>"
         "</div>"
-        "</div>"
+    );
+
+    // 4. Client-side JavaScript logic
+    httpd_resp_sendstr_chunk(req,
         "<script>"
+        "var ghReleases=[];"
+        "function loadGitHubReleases(){"
+        "var st=document.getElementById('gh_status');st.innerHTML='⏳ Запрос релизов с api.github.com...';"
+        "var xhr=new XMLHttpRequest();xhr.open('GET','https://api.github.com/repos/geminibitok-oss/ESP-v2/releases?per_page=15',true);"
+        "xhr.onload=function(){if(xhr.status==200){try{"
+        "ghReleases=JSON.parse(xhr.responseText);"
+        "var sel=document.getElementById('rel_select');sel.innerHTML='';"
+        "if(ghReleases&&ghReleases.length>0){"
+        "for(var i=0;i<ghReleases.length;i++){"
+        "var r=ghReleases[i];"
+        "var opt=document.createElement('option');opt.value=r.tag_name;"
+        "opt.text=r.tag_name+(r.tag_name==='latest'?' (Свежая автосборка)':' - '+(r.name||'Релиз'));"
+        "sel.appendChild(opt);"
+        "}"
+        "st.innerHTML='✅ Найдено релизов: <b>'+ghReleases.length+'</b>. Выберите версию ниже и нажмите кнопку установки.';"
+        "}else{"
+        "st.innerHTML='ℹ️ Доступен базовый релиз latest.';"
+        "}"
+        "}catch(e){st.innerHTML='Ошибка парсинга ответа GitHub: '+e;}}"
+        "else{st.innerHTML='⚠️ GitHub API ответил статусом: '+xhr.status;}};"
+        "xhr.onerror=function(){st.innerHTML='⚠️ Браузер не смог соединиться с api.github.com (проверьте доступ в интернет).';};"
+        "xhr.send();"
+        "}"
+        "function onSelectRelease(){}"
+        "function installFromGitHub(){"
+        "var sel=document.getElementById('rel_select');var tag=sel.value||'latest';"
+        "var binUrl='https://github.com/geminibitok-oss/ESP-v2/releases/download/'+tag+'/ESP_lestn_v2.bin';"
+        "var b=document.getElementById('gh_install_btn');b.disabled=true;"
+        "var p=document.getElementById('prg_box');p.style.display='block';"
+        "var bar=document.getElementById('bar');var pct=document.getElementById('pct');var st=document.getElementById('st_txt');"
+        "st.innerText='Загрузка бинарника '+tag+' из GitHub Releases...';"
+        "var fetchXhr=new XMLHttpRequest();fetchXhr.open('GET',binUrl,true);fetchXhr.responseType='blob';"
+        "fetchXhr.onprogress=function(e){if(e.lengthComputable){var pc=Math.round((e.loaded/e.total)*50);bar.style.width=pc+'%';pct.innerText=pc+'%';st.innerText='Скачивание '+tag+' из GitHub ('+pc+'%)...';}};"
+        "fetchXhr.onload=function(){if(fetchXhr.status==200){"
+        "var blob=fetchXhr.response;"
+        "uploadBlobToEsp(blob,tag);"
+        "}else{alert('Не удалось скачать '+tag+' из GitHub (статус '+fetchXhr.status+').');b.disabled=false;}};"
+        "fetchXhr.onerror=function(){alert('Ошибка сети при скачивании с GitHub.');b.disabled=false;};"
+        "fetchXhr.send();"
+        "}"
+        "function uploadBlobToEsp(blob,verTag){"
+        "var bar=document.getElementById('bar');var pct=document.getElementById('pct');var st=document.getElementById('st_txt');"
+        "st.innerText='Прошивка ESP32 версией '+verTag+'...';"
+        "var xhr=new XMLHttpRequest();xhr.open('POST','/api/ota',true);"
+        "xhr.upload.onprogress=function(e){if(e.lengthComputable){var pc=50+Math.round((e.loaded/e.total)*50);bar.style.width=pc+'%';pct.innerText=pc+'%';st.innerText='Запись '+verTag+' во Flash ('+pc+'%)...';}};"
+        "xhr.onload=function(){if(xhr.status==200){"
+        "st.innerText='Успех! Контроллер прошит на '+verTag+' и перезагружается...';bar.style.background='#16a34a';"
+        "var c=15;var ti=setInterval(function(){st.innerText='Перезагрузка... ('+c+'с)';if(--c<=0){clearInterval(ti);location.href='/';}},1000);"
+        "}else{alert('Ошибка OTA при записи: '+xhr.responseText);document.getElementById('gh_install_btn').disabled=false;}};"
+        "xhr.onerror=function(){alert('Сбой сети при отправке прошивки в ESP32');document.getElementById('gh_install_btn').disabled=false;};"
+        "xhr.send(blob);"
+        "}"
         "function startOTA(){"
         "var f=document.getElementById('ota_file').files[0];"
         "if(!f){alert('Пожалуйста, выберите .bin файл');return;}"
@@ -65,21 +155,17 @@ esp_err_t ota_page_handler(httpd_req_t *req)
         "var p=document.getElementById('prg_box');p.style.display='block';"
         "var bar=document.getElementById('bar');var pct=document.getElementById('pct');var st=document.getElementById('st_txt');"
         "var xhr=new XMLHttpRequest();xhr.open('POST','/api/ota',true);"
-        "xhr.upload.onprogress=function(e){if(e.lengthComputable){var pc=Math.round((e.loaded/e.total)*100);bar.style.width=pc+'%%';pct.innerText=pc+'%%';}};"
+        "xhr.upload.onprogress=function(e){if(e.lengthComputable){var pc=Math.round((e.loaded/e.total)*100);bar.style.width=pc+'%';pct.innerText=pc+'%';}};"
         "xhr.onload=function(){if(xhr.status==200){st.innerText='Успех! Контроллер перезагружается...';bar.style.background='#16a34a';"
         "var c=15;var ti=setInterval(function(){st.innerText='Перезагрузка... ('+c+'с)';if(--c<=0){clearInterval(ti);location.href='/';}},1000);"
         "}else{alert('Ошибка OTA: '+xhr.responseText);b.disabled=false;}};"
         "xhr.onerror=function(){alert('Сбой сети при передаче OTA');b.disabled=false;};"
         "xhr.send(f);"
         "}"
-        "</script>",
-        running ? running->label : "ota_0",
-        update ? update->label : "ota_1",
-        app_info.version,
-        (unsigned long)(esp_get_free_heap_size() / 1024)
+        "setTimeout(loadGitHubReleases, 400);"
+        "</script>"
     );
 
-    httpd_resp_sendstr_chunk(req, html);
     web_send_html_footer(req);
     return ESP_OK;
 }
