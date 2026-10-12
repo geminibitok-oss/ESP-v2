@@ -100,13 +100,23 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "<option value='2' %s>Штора (Края / Центр)</option>"
         "<option value='3' %s>Метеор (Бегущая комета)</option>"
         "<option value='4' %s>Радужная волна</option>"
-        "<option value='5' %s>Огонь / Камин</option></select></div>",
+        "<option value='5' %s>Огонь / Камин</option>"
+        "<option value='6' %s>Бегущий светлячок (Spark Runner)</option>"
+        "<option value='7' %s>Гармошка (Схлопывание навстречу)</option>"
+        "<option value='8' %s>Цветовой спектр (Cycle Wave)</option>"
+        "<option value='9' %s>Звездное небо (Случайные ступени)</option>"
+        "<option value='10' %s>Неоновый импульс (Cyber Pulse)</option></select></div>",
         cfg->anim_effect == 0 ? "selected" : "",
         cfg->anim_effect == 1 ? "selected" : "",
         cfg->anim_effect == 2 ? "selected" : "",
         cfg->anim_effect == 3 ? "selected" : "",
         cfg->anim_effect == 4 ? "selected" : "",
-        cfg->anim_effect == 5 ? "selected" : ""
+        cfg->anim_effect == 5 ? "selected" : "",
+        cfg->anim_effect == 6 ? "selected" : "",
+        cfg->anim_effect == 7 ? "selected" : "",
+        cfg->anim_effect == 8 ? "selected" : "",
+        cfg->anim_effect == 9 ? "selected" : "",
+        cfg->anim_effect == 10 ? "selected" : ""
     );
     httpd_resp_sendstr_chunk(req, buf);
 
@@ -116,21 +126,33 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "<option value='1' %s>Плавное дыхание (Breathe)</option>"
         "<option value='2' %s>Шиммер (Мерцание звезд)</option>"
         "<option value='3' %s>Радужный перелив</option>"
-        "<option value='4' %s>Живая свеча</option></select></div>",
+        "<option value='4' %s>Живая свеча</option>"
+        "<option value='5' %s>Северное сияние (Aurora)</option>"
+        "<option value='6' %s>Плазма / Лава (Plasma Lava)</option>"
+        "<option value='7' %s>Пульс / Сердце (Heartbeat)</option></select></div>",
         cfg->hold_effect == 0 ? "selected" : "",
         cfg->hold_effect == 1 ? "selected" : "",
         cfg->hold_effect == 2 ? "selected" : "",
         cfg->hold_effect == 3 ? "selected" : "",
-        cfg->hold_effect == 4 ? "selected" : ""
+        cfg->hold_effect == 4 ? "selected" : "",
+        cfg->hold_effect == 5 ? "selected" : "",
+        cfg->hold_effect == 6 ? "selected" : "",
+        cfg->hold_effect == 7 ? "selected" : ""
     );
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Эффект выключения</label><select name='off_eff'>");
     snprintf(buf, sizeof(buf),
         "<option value='0' %s>Волна вслед за шагами</option>"
-        "<option value='1' %s>Плавное общее затухание</option></select></div></div>",
+        "<option value='1' %s>Плавное общее затухание</option>"
+        "<option value='2' %s>Пошаговый мягкий фейд</option>"
+        "<option value='3' %s>Закрытие шторы (К центру)</option>"
+        "<option value='4' %s>Растворение (Звездное угасание)</option></select></div></div>",
         cfg->off_effect == 0 ? "selected" : "",
-        cfg->off_effect == 1 ? "selected" : ""
+        cfg->off_effect == 1 ? "selected" : "",
+        cfg->off_effect == 2 ? "selected" : "",
+        cfg->off_effect == 3 ? "selected" : "",
+        cfg->off_effect == 4 ? "selected" : ""
     );
     httpd_resp_sendstr_chunk(req, buf);
 

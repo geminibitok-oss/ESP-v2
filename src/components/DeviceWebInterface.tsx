@@ -790,6 +790,11 @@ pause
                       <option value={3}>Метеор (Бегущая комета)</option>
                       <option value={4}>Радужная волна</option>
                       <option value={5}>Огонь / Камин</option>
+                      <option value={6}>Бегущий светлячок (Spark Runner)</option>
+                      <option value={7}>Гармошка (Схлопывание навстречу)</option>
+                      <option value={8}>Цветовой спектр (Cycle Wave)</option>
+                      <option value={9}>Звездное небо (Случайные ступени)</option>
+                      <option value={10}>Неоновый импульс (Cyber Pulse)</option>
                     </select>
                   </div>
                   <div>
@@ -804,6 +809,9 @@ pause
                       <option value={2}>Шиммер (Мерцание звезд)</option>
                       <option value={3}>Радужный перелив</option>
                       <option value={4}>Живая свеча</option>
+                      <option value={5}>Северное сияние (Aurora)</option>
+                      <option value={6}>Плазма / Лава (Plasma Lava)</option>
+                      <option value={7}>Пульс / Сердце (Heartbeat)</option>
                     </select>
                   </div>
                   <div>
@@ -815,6 +823,9 @@ pause
                     >
                       <option value={0}>Волна вслед за шагами</option>
                       <option value={1}>Плавное общее затухание</option>
+                      <option value={2}>Пошаговый мягкий фейд</option>
+                      <option value={3}>Закрытие шторы (К центру)</option>
+                      <option value={4}>Растворение (Звездное угасание)</option>
                     </select>
                   </div>
                 </div>

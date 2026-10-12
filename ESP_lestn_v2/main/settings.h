@@ -17,28 +17,38 @@
 
 /* Animation Effects (Включение) */
 typedef enum {
-    ANIM_EFFECT_CLASSIC = 0,   /* 0: Классическая волна */
-    ANIM_EFFECT_FADE = 1,      /* 1: Плавное нарастание (Fade Wave) */
-    ANIM_EFFECT_CURTAIN = 2,   /* 2: Штора / От центра к краям */
-    ANIM_EFFECT_METEOR = 3,    /* 3: Метеор / Бегущая комета */
-    ANIM_EFFECT_RAINBOW = 4,   /* 4: Радужная волна */
-    ANIM_EFFECT_FIRE = 5       /* 5: Огонь / Камин */
+    ANIM_EFFECT_CLASSIC = 0,       /* 0: Классическая волна */
+    ANIM_EFFECT_FADE = 1,          /* 1: Плавное нарастание (Fade Wave) */
+    ANIM_EFFECT_CURTAIN = 2,       /* 2: Штора / От центра к краям */
+    ANIM_EFFECT_METEOR = 3,        /* 3: Метеор / Бегущая комета */
+    ANIM_EFFECT_RAINBOW = 4,       /* 4: Радужная волна */
+    ANIM_EFFECT_FIRE = 5,          /* 5: Огонь / Камин */
+    ANIM_EFFECT_RUNNER = 6,        /* 6: Бегущий светлячок (Spark Runner) */
+    ANIM_EFFECT_ACCORDION = 7,     /* 7: Гармошка / Схлопывание навстречу */
+    ANIM_EFFECT_COLOR_CYCLE = 8,   /* 8: Цветовой спектр (Cycle Wave) */
+    ANIM_EFFECT_STARLIGHT = 9,     /* 9: Звездное небо / Случайные ступени */
+    ANIM_EFFECT_NEON_PULSE = 10    /* 10: Неоновый импульс (Cyber Pulse) */
 } anim_effect_t;
 
 /* Hold Phase Effects (Удержание) */
 typedef enum {
-    HOLD_EFFECT_SOLID = 0,     /* 0: Статичный ровный свет */
-    HOLD_EFFECT_BREATHE = 1,   /* 1: Дыхание / Пульсация яркости */
-    HOLD_EFFECT_SHIMMER = 2,   /* 2: Шиммер / Мерцание звезд */
-    HOLD_EFFECT_RAINBOW = 3,   /* 3: Радужный перелив */
-    HOLD_EFFECT_CANDLE = 4     /* 4: Мерцание свечи */
+    HOLD_EFFECT_SOLID = 0,         /* 0: Статичный ровный свет */
+    HOLD_EFFECT_BREATHE = 1,       /* 1: Дыхание / Пульсация яркости */
+    HOLD_EFFECT_SHIMMER = 2,       /* 2: Шиммер / Мерцание звезд */
+    HOLD_EFFECT_RAINBOW = 3,       /* 3: Радужный перелив */
+    HOLD_EFFECT_CANDLE = 4,        /* 4: Мерцание свечи */
+    HOLD_EFFECT_AURORA = 5,        /* 5: Северное сияние (Aurora Borealis) */
+    HOLD_EFFECT_PLASMA = 6,        /* 6: Плазма / Лавовая лампа */
+    HOLD_EFFECT_HEARTBEAT = 7      /* 7: Биение сердца (Heartbeat Pulse) */
 } hold_effect_t;
 
 /* Turn-Off Effects (Выключение) */
 typedef enum {
-    OFF_EFFECT_WAVE = 0,       /* 0: Волна вслед за движением */
-    OFF_EFFECT_ALL_FADE = 1,   /* 1: Одновременное плавное затухание */
-    OFF_EFFECT_STEP_FADE = 2   /* 2: Пошаговый плавный фейд */
+    OFF_EFFECT_WAVE = 0,           /* 0: Волна вслед за движением */
+    OFF_EFFECT_ALL_FADE = 1,       /* 1: Одновременное плавное затухание */
+    OFF_EFFECT_STEP_FADE = 2,      /* 2: Пошаговый плавный фейд */
+    OFF_EFFECT_CURTAIN_CLOSE = 3,  /* 3: Закрытие шторы (К центру) */
+    OFF_EFFECT_DISSOLVE = 4        /* 4: Растворение / Звездный дождь */
 } off_effect_t;
 
 typedef struct

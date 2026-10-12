@@ -28,9 +28,9 @@ export interface StaircaseSettings {
   night_color_b: number;
 
   // Effects
-  anim_effect: number; // 0: Classic, 1: Fade, 2: Curtain, 3: Meteor, 4: Rainbow, 5: Fire
-  hold_effect: number; // 0: Solid, 1: Breathe, 2: Shimmer, 3: Rainbow, 4: Candle
-  off_effect: number;  // 0: Wave, 1: All Fade, 2: Step Fade
+  anim_effect: number; // 0: Classic, 1: Fade, 2: Curtain, 3: Meteor, 4: Rainbow, 5: Fire, 6: Runner, 7: Accordion, 8: Color Cycle, 9: Starlight, 10: Neon Pulse
+  hold_effect: number; // 0: Solid, 1: Breathe, 2: Shimmer, 3: Rainbow, 4: Candle, 5: Aurora, 6: Plasma Lava, 7: Heartbeat Pulse
+  off_effect: number;  // 0: Wave, 1: All Fade, 2: Step Fade, 3: Curtain Close, 4: Dissolve Stars
 
   // Timings (ms)
   step_on_time_ms: number;

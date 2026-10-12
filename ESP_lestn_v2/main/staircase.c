@@ -454,6 +454,82 @@ static void staircase_fsm_task(void *pvParameters)
                     }
                 }
             }
+            else if (effect == ANIM_EFFECT_RUNNER)
+            {
+                /* Spark runner downwards */
+                uint16_t sub_d = delay_ms > 30 ? delay_ms / 2 : 20;
+                for (int s = total_steps - 1; s >= 0; s--)
+                {
+                    if (s < total_steps - 1) staircase_led_set_step_scaled((uint16_t)(s + 1), cfg->color_r, cfg->color_g, cfg->color_b, (uint8_t)(cfg->brightness * 0.5f));
+                    staircase_led_set_step_scaled((uint16_t)s, 255, 255, 255, 100);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_d)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                }
+            }
+            else if (effect == ANIM_EFFECT_ACCORDION)
+            {
+                /* Symmetrical wave meeting in middle */
+                uint16_t half = (total_steps + 1) / 2;
+                uint16_t c_d = delay_ms > 40 ? delay_ms : 40;
+                for (uint16_t i = 0; i < half; i++)
+                {
+                    uint16_t s1 = i;
+                    uint16_t s2 = (total_steps - 1) - i;
+                    staircase_led_set_step_scaled(s1, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                    staircase_led_set_step_scaled(s2, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(c_d)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                }
+            }
+            else if (effect == ANIM_EFFECT_COLOR_CYCLE)
+            {
+                /* Spectrum wave downwards */
+                for (int s = total_steps - 1; s >= 0; s--)
+                {
+                    uint16_t hue = (s * 25) % 360;
+                    uint8_t r, g, b;
+                    staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
+                    staircase_led_set_step_scaled((uint16_t)s, r, g, b, cfg->brightness);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                }
+            }
+            else if (effect == ANIM_EFFECT_STARLIGHT)
+            {
+                /* Random sparkling downwards */
+                uint16_t s_d = delay_ms > 40 ? delay_ms / 2 : 25;
+                for (uint16_t step = 0; step < total_steps; step++)
+                {
+                    uint16_t target_s = (total_steps - 1) - ((step * 7 + 3) % total_steps);
+                    staircase_led_set_step_scaled(target_s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(s_d)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                }
+                staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+            }
+            else if (effect == ANIM_EFFECT_NEON_PULSE)
+            {
+                /* Neon surge downwards */
+                uint16_t sub_p = delay_ms / 3;
+                if (sub_p < 15) sub_p = 15;
+                for (int s = total_steps - 1; s >= 0; s--)
+                {
+                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, (uint8_t)(cfg->brightness * 0.4f));
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                    staircase_led_set_step_scaled((uint16_t)s, 255, 255, 255, 100);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
+                        if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                    }
+                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                }
+            }
             else if (effect == ANIM_EFFECT_FADE)
             {
                 /* Smooth micro-fade downwards */
@@ -536,6 +612,38 @@ static void staircase_fsm_task(void *pvParameters)
             else if (hold_eff == HOLD_EFFECT_CANDLE)
             {
                 staircase_led_render_fire_frame(cfg->brightness, hold_tick);
+            }
+            else if (hold_eff == HOLD_EFFECT_AURORA)
+            {
+                /* Aurora Borealis: Smooth emerald, cyan, indigo waves */
+                for (uint16_t s = 0; s < cfg->steps; s++) {
+                    uint16_t hue = (130 + ((s * 15 + hold_tick * 3) % 110)) % 360;
+                    uint8_t r, g, b;
+                    staircase_led_hsv2rgb(hue, 230, 255, &r, &g, &b);
+                    staircase_led_set_step_scaled(s, r, g, b, cfg->brightness);
+                }
+            }
+            else if (hold_eff == HOLD_EFFECT_PLASMA)
+            {
+                /* Plasma lava lamp flow */
+                for (uint16_t s = 0; s < cfg->steps; s++) {
+                    uint16_t hue = (cfg->color_r + ((s * 25 + hold_tick * 4) % 180)) % 360;
+                    uint8_t r, g, b;
+                    staircase_led_hsv2rgb(hue, 250, 255, &r, &g, &b);
+                    staircase_led_set_step_scaled(s, r, g, b, cfg->brightness);
+                }
+            }
+            else if (hold_eff == HOLD_EFFECT_HEARTBEAT)
+            {
+                /* Double pulse heartbeat */
+                uint16_t phase = hold_tick % 40;
+                uint8_t factor = 40;
+                if (phase < 6) factor = 40 + phase * 10;
+                else if (phase < 12) factor = 100 - (phase - 6) * 10;
+                else if (phase < 18) factor = 40 + (phase - 12) * 9;
+                else if (phase < 24) factor = 94 - (phase - 18) * 9;
+                uint8_t br = (uint8_t)((cfg->brightness * factor) / 100);
+                staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, br);
             }
 
             /* Calculate remaining time */

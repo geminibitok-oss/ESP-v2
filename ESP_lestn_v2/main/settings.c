@@ -102,9 +102,9 @@ static void settings_sanitize(staircase_settings_t *s)
     }
     if (s->brightness > 100) s->brightness = 100;
     if (s->night_brightness > 100) s->night_brightness = 20;
-    if (s->anim_effect > 5) s->anim_effect = ANIM_EFFECT_CLASSIC;
-    if (s->hold_effect > 4) s->hold_effect = HOLD_EFFECT_SOLID;
-    if (s->off_effect > 2) s->off_effect = OFF_EFFECT_WAVE;
+    if (s->anim_effect > 10) s->anim_effect = ANIM_EFFECT_CLASSIC;
+    if (s->hold_effect > 7) s->hold_effect = HOLD_EFFECT_SOLID;
+    if (s->off_effect > 4) s->off_effect = OFF_EFFECT_WAVE;
     if (s->step_on_time_ms < 10 || s->step_on_time_ms > 5000) s->step_on_time_ms = 120;
     if (s->step_off_time_ms < 10 || s->step_off_time_ms > 5000) s->step_off_time_ms = 180;
     if (s->hold_time_ms > 60000) s->hold_time_ms = 4000;
