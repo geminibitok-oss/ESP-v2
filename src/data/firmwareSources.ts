@@ -1710,6 +1710,12 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         snprintf(current_ip, sizeof(current_ip), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Connected to Wi-Fi! IP: %s", current_ip);
+        printf("\r\n===================================================\r\n");
+        printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
+        printf(" >>>  IP: %s  <<<\r\n", current_ip);
+        printf(" Веб-интерфейс: http://%s\r\n", current_ip);
+        printf("===================================================\r\n\r\n");
+        fflush(stdout);
         retry_num = 0;
         is_ap = false;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);

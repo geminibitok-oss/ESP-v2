@@ -387,7 +387,12 @@ export const FirmwareBuildAndFlash: React.FC<FirmwareBuildAndFlashProps> = ({
         `[ESP32] Чип: ESP32-D0WD-V3 (Rev 3), 2 ядра, 240 МГц`,
         `[ESP32] Flash память: 4 МБ (32 Мбит), Quad I/O 80 МГц`,
         `[ESP32] MAC адрес: 24:6F:28:9A:C4:12`,
-        `[ESP32] Загрузчик готов к записи прошивки или мониторингу.`,
+        `===================================================`,
+        `[UART / WI-FI] ESP32 IP-АДРЕС В ЛОКАЛЬНОЙ СЕТИ:`,
+        `>>>  IP: ${otaDeviceInfo?.reachable ? (deviceIp || '192.168.1.145') : '192.168.4.1 (Точка доступа) / 192.168.1.xxx (Роутер)'}  <<<`,
+        `Веб-интерфейс: http://${otaDeviceInfo?.reachable ? (deviceIp || '192.168.1.145') : '192.168.4.1'}`,
+        `===================================================`,
+        `[ESP32] Порт открыт для отслеживания логов и адресов в реальном времени.`,
       ]);
 
       // Read serial loop
@@ -1817,6 +1822,104 @@ esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* UART Wi-Fi IP Discovery Card & Windows Command Helper */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-sky-950 text-sky-400 border border-sky-800 rounded-xl">
+                  <Terminal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                    <span>Просмотр IP-адреса Wi-Fi через UART (Serial Monitor)</span>
+                    <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-mono font-medium">
+                      115200 бод
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    При старте и каждые 10 секунд контроллер отправляет в UART свой реальный IP-адрес в локальной сети
+                  </p>
+                </div>
+              </div>
+
+              {/* Instructions and Windows Commands */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                {/* Method 1: Browser Web Serial Monitor */}
+                <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
+                  <div className="font-semibold text-sky-300 flex items-center gap-1.5">
+                    <Usb className="w-4 h-4" />
+                    <span>Способ 1: Прямо в этом браузере</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-300 text-[11px] leading-relaxed">
+                    <li>Нажмите синюю кнопку <strong>«Подключить ESP32 по USB»</strong> вверху.</li>
+                    <li>Выберите ваш COM-порт (чип CP2102 или CH340).</li>
+                    <li>
+                      В окне монитора ниже появится блок:
+                      <div className="mt-1 p-2 bg-slate-950 border border-slate-800 rounded text-emerald-400 font-mono text-[10px]">
+                        [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:<br />
+                        &gt;&gt;&gt; IP: 192.168.1.145 &lt;&lt;&lt;<br />
+                        Веб-интерфейс: http://192.168.1.145
+                      </div>
+                    </li>
+                    <li className="text-slate-400">Если плата уже включена — нажмите кнопку <strong>EN (Reset)</strong> на плате ESP32 для вывода стартового лога.</li>
+                  </ol>
+                </div>
+
+                {/* Method 2: Windows Command Prompt / PowerShell */}
+                <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
+                  <div className="font-semibold text-emerald-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Terminal className="w-4 h-4" />
+                      <span>Способ 2: Запуск в Windows (CMD / PowerShell)</span>
+                    </span>
+                    <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">Windows</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Команда для просмотра UART-логов в командной строке Windows через Python / esptool:
+                  </p>
+
+                  <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-emerald-400">
+                    <span className="truncate">python -m serial.tools.miniterm COM3 115200</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCommand('python -m serial.tools.miniterm COM3 115200', 'miniterm')}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      {copiedCmd === 'miniterm' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedCmd === 'miniterm' ? 'Скопировано' : 'Копировать'}</span>
+                    </button>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-2 font-mono text-[11px] text-sky-400">
+                    <span className="truncate">idf.py -p COM3 monitor</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCommand('idf.py -p COM3 monitor', 'idf_mon')}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      {copiedCmd === 'idf_mon' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedCmd === 'idf_mon' ? 'Скопировано' : 'Копировать'}</span>
+                    </button>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500">
+                    💡 Замените <code>COM3</code> на номер вашего порта (смотрите в «Диспетчере устройств» Windows ➡️ Порты (COM и LPT)). Выход из miniterm: <code>Ctrl+]</code>.
+                  </div>
+                </div>
+              </div>
+
+              {/* Windows PuTTY / PowerShell one-liner alternatives */}
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="space-y-0.5 text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">Другие программы для Windows:</span>
+                  <div>• <strong>PuTTY:</strong> Connection Type: <code>Serial</code>, Serial line: <code>COM3</code>, Speed: <code>115200</code>.</div>
+                  <div>• <strong>Arduino IDE:</strong> Инструменты ➡️ Монитор порта (скорость 115200).</div>
+                </div>
+                <div className="text-[11px] text-sky-400 font-mono bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 shrink-0">
+                  Скорость: 115200 baud
+                </div>
+              </div>
             </div>
 
             {/* Serial Monitor Terminal */}

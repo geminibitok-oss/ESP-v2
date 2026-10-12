@@ -84,6 +84,13 @@ static void wifi_event_handler(
         sta_retry_num = 0;
 
         ESP_LOGI(TAG, "Wi-Fi connected successfully, IP: %s", ip_address);
+        printf("\r\n===================================================\r\n");
+        printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
+        printf(" >>>  IP: %s  <<<\r\n", ip_address);
+        printf(" Веб-интерфейс доступен по ссылке: http://%s\r\n", ip_address);
+        printf(" OTA-обновление: http://%s/update\r\n", ip_address);
+        printf("===================================================\r\n\r\n");
+        fflush(stdout);
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -118,8 +125,12 @@ static esp_err_t start_ap_internal(void)
     connected = false;
 
     ESP_LOGI(TAG, "=== Fallback AP Active ===");
-    ESP_LOGI(TAG, "SSID: ESP-Lestn (Open)");
-    ESP_LOGI(TAG, "Web UI: http://192.168.4.1");
+    printf("\r\n===================================================\r\n");
+    printf(" [UART / WI-FI] ESP32 РАБОТАЕТ В РЕЖИМЕ ТОЧКИ ДОСТУПА (AP):\r\n");
+    printf(" >>>  IP: 192.168.4.1  |  SSID: ESP-Lestn  <<<\r\n");
+    printf(" Веб-интерфейс: http://192.168.4.1\r\n");
+    printf("===================================================\r\n\r\n");
+    fflush(stdout);
 
     return ESP_OK;
 }
