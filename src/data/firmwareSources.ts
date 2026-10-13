@@ -2909,6 +2909,24 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     if (!cfg) return ESP_FAIL;
 
     web_send_html_header(req, "Настройки");
+    /* Проверяем параметр saved=1 в URL для отображения уведомления */
+    char query[32] = {0};
+    bool show_saved_banner = false;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        if (strstr(query, "saved=1") != NULL) {
+            show_saved_banner = true;
+        }
+    }
+
+    if (show_saved_banner) {
+        httpd_resp_sendstr_chunk(req,
+            "<div id='save-toast' style='position:sticky;top:10px;z-index:999;margin-bottom:14px;padding:14px 18px;background:#15803d;color:#fff;border-radius:10px;font-weight:600;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:space-between;animation:fadeIn 0.3s ease-in-out'>"
+            "<span>✅ НАСТРОЙКИ УСПЕШНО СОХРАНЕНЫ В FLASH (NVS)!</span>"
+            "<button type='button' style='background:none;border:none;color:#fff;font-size:18px;cursor:pointer' onclick='this.parentElement.style.display="none"'>✕</button>"
+            "</div>"
+        );
+    }
+
 
     httpd_resp_sendstr_chunk(req,
         "<form method='POST' action='/settings'>"
@@ -3499,7 +3517,7 @@ esp_err_t settings_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Settings saved to NVS and applied to running controller");
 
     httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/settings");
+    httpd_resp_set_hdr(req, "Location", "/settings?saved=1");
     return httpd_resp_send(req, NULL, 0);
 }
 `

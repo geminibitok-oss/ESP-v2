@@ -138,16 +138,24 @@ void settings_load(staircase_settings_t *s)
         return;
     }
 
-    size_t size = sizeof(*s);
-    err = nvs_get_blob(nvs, NVS_KEY, s, &size);
+    /* Выделяем временный буфер достаточного размера */
+    uint8_t raw_buf[sizeof(*s) + 128];
+    size_t size = sizeof(raw_buf);
+    err = nvs_get_blob(nvs, NVS_KEY, raw_buf, &size);
     nvs_close(nvs);
 
-    if (err != ESP_OK || size != sizeof(*s))
+    if (err != ESP_OK || size == 0)
     {
-        ESP_LOGW(TAG, "Invalid/outdated settings size (%d vs %d), resetting to defaults", (int)size, (int)sizeof(*s));
-        settings_reset(s);
+        ESP_LOGI(TAG, "No valid settings blob found, using defaults");
         return;
     }
+
+    /* Копируем столько байт, сколько было сохранено в предыдущей версии прошивки,
+       сохраняя дефолтные значения для всех новых полей! */
+    size_t copy_size = (size < sizeof(*s)) ? size : sizeof(*s);
+    memcpy(s, raw_buf, copy_size);
+    ESP_LOGI(TAG, "Successfully migrated %u bytes from previous firmware version (current size %u)", 
+             (unsigned int)copy_size, (unsigned int)sizeof(*s));
 
     settings_sanitize(s);
     ESP_LOGI(TAG, "Settings loaded successfully from NVS");
