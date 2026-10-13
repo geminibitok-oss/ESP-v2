@@ -107,20 +107,24 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "</div></div></details>"
     );
 
-    /* СЕКЦИЯ 3: Световые эффекты и тайминги */
+    /* СЕКЦИЯ 3: Световые эффекты и тайминги (в секундах для удобства) */
     httpd_resp_sendstr_chunk(req,
         "<details class='st-sec'><summary>✨ 3. Световые эффекты и тайминги</summary><div class='sec-body'>"
-        "<div class='grid'><div class='form-group'><label>Задержка включения (мс)</label>"
+        "<div class='grid'>"
+        "<div class='form-group'><label>Скорость шага вкл. (мс на ступень)</label>"
     );
-    snprintf(buf, sizeof(buf), "<input type='number' name='step_on' value='%u' min='20' max='5000'></div>", (unsigned int)cfg->step_on_time_ms);
+    snprintf(buf, sizeof(buf), "<input type='number' name='step_on' value='%u' min='20' max='2000' placeholder='120'></div>", (unsigned int)cfg->step_on_time_ms);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Задержка выключения (мс)</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='step_off' value='%u' min='20' max='5000'></div>", (unsigned int)cfg->step_off_time_ms);
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Скорость шага выкл. (мс на ступень)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' name='step_off' value='%u' min='20' max='2000' placeholder='150'></div>", (unsigned int)cfg->step_off_time_ms);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Время удержания (мс)</label>");
-    snprintf(buf, sizeof(buf), "<input type='number' name='hold' value='%u' min='500' max='60000'></div></div>", (unsigned int)cfg->hold_time_ms);
+    /* Время удержания задается в СЕКУНДАХ */
+    float hold_sec = (float)cfg->hold_time_ms / 1000.0f;
+    if (hold_sec < 1.0f) hold_sec = 4.0f;
+    httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>⏱ Время удержания света (СЕКУНДЫ)</label>");
+    snprintf(buf, sizeof(buf), "<input type='number' step='0.5' name='hold_sec' value='%.1f' min='1' max='300'></div></div>", hold_sec);
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req, "<div class='grid'><div class='form-group'><label>Эффект включения</label><select name='anim_eff'>");
@@ -537,7 +541,16 @@ esp_err_t settings_post_handler(httpd_req_t *req)
 
     cfg->step_on_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_on", cfg->step_on_time_ms);
     cfg->step_off_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_off", cfg->step_off_time_ms);
-    cfg->hold_time_ms = (uint16_t)web_get_post_param_int(post_buf, "hold", cfg->hold_time_ms);
+        char hold_sec_str[32] = {0};
+    if (web_get_post_param(post_buf, "hold_sec", hold_sec_str, sizeof(hold_sec_str))) {
+        float sec = (float)atof(hold_sec_str);
+        if (sec >= 1.0f && sec <= 600.0f) {
+            cfg->hold_time_ms = (uint32_t)(sec * 1000.0f);
+        }
+    } else {
+        cfg->hold_time_ms = (uint32_t)web_get_post_param_int(post_buf, "hold", cfg->hold_time_ms);
+    }
+    if (cfg->hold_time_ms < 1000) cfg->hold_time_ms = 4000;
 
     cfg->anim_effect = (uint8_t)web_get_post_param_int(post_buf, "anim_eff", cfg->anim_effect);
     cfg->hold_effect = (uint8_t)web_get_post_param_int(post_buf, "hold_eff", cfg->hold_effect);

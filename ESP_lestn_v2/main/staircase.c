@@ -484,7 +484,8 @@ static void staircase_fsm_task(void *pvParameters)
             {
                 current_state = STAIR_STATE_HOLDING;
                 hold_start_time_us = esp_timer_get_time();
-                hold_duration_ms = cfg->hold_time_ms;
+                hold_duration_ms = (cfg->hold_time_ms > 0) ? cfg->hold_time_ms : 5000;
+                ESP_LOGI(TAG, "All steps turned ON UP! Entering HOLDING state for %lu ms", (unsigned long)hold_duration_ms);
             }
         }
 
@@ -712,7 +713,8 @@ static void staircase_fsm_task(void *pvParameters)
             {
                 current_state = STAIR_STATE_HOLDING;
                 hold_start_time_us = esp_timer_get_time();
-                hold_duration_ms = cfg->hold_time_ms;
+                hold_duration_ms = (cfg->hold_time_ms > 0) ? cfg->hold_time_ms : 5000;
+                ESP_LOGI(TAG, "All steps turned ON DOWN! Entering HOLDING state for %lu ms", (unsigned long)hold_duration_ms);
             }
         }
 
@@ -781,8 +783,9 @@ static void staircase_fsm_task(void *pvParameters)
 
             /* Calculate remaining time */
             int64_t elapsed_ms = (esp_timer_get_time() - hold_start_time_us) / 1000;
-            if (elapsed_ms >= hold_duration_ms)
+            if (elapsed_ms >= (int64_t)hold_duration_ms)
             {
+                ESP_LOGI(TAG, "Hold time finished (%lld >= %lu ms), starting turn-off animation...", (long long)elapsed_ms, (unsigned long)hold_duration_ms);
                 /* Transition to turning off */
                 bool off_up = entered_from_bottom;
                 if (cfg->reverse_direction) {

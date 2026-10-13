@@ -33,7 +33,7 @@ esp_err_t index_handler(httpd_req_t *req)
         "</div>"
     );
 
-    snprintf(buf, sizeof(buf), "<p>Таймер удержания: <strong id='hold-time'>%u мс</strong></p>", (unsigned int)staircase_get_hold_remaining_ms());
+    snprintf(buf, sizeof(buf), "<p>⏱ Таймер удержания света: <strong id='hold-time' style='color:#38bdf8'>%.1f сек</strong></p>", (float)staircase_get_hold_remaining_ms() / 1000.0f);
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
@@ -111,7 +111,7 @@ esp_err_t index_handler(httpd_req_t *req)
         "      pBtn.innerText = d.is_party ? '🛑 Отключить режим Праздник' : '🎉 Режим «Праздник» (Бесконечный эффект)';"
         "      pBtn.style.background = d.is_party ? '#dc2626' : '#a855f7';"
         "    }"
-        "    document.getElementById('hold-time').innerText = d.hold_ms + ' мс';"
+        "    document.getElementById('hold-time').innerText = (d.hold_ms > 0 ? (d.hold_ms / 1000).toFixed(1) + ' сек' : '0 сек');"
         "    if(d.current_time){ document.getElementById('clock-time').innerText = d.current_time + (d.time_synced ? ' (NTP)' : ' (RTC)'); }"
         "    if(d.sunrise){ document.getElementById('sun-rise').innerText = d.sunrise; }"
         "    if(d.sunset){ document.getElementById('sun-set').innerText = d.sunset; }"

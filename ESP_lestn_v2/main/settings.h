@@ -88,7 +88,7 @@ typedef struct
     /* Staircase timing */
     uint16_t step_on_time_ms;   /* Delay between turning on each step */
     uint16_t step_off_time_ms;  /* Delay between turning off each step */
-    uint16_t hold_time_ms;      /* How long to stay fully lit */
+    uint32_t hold_time_ms;      /* How long to stay fully lit (up to 300,000 ms) */
     uint16_t fade_duration_ms;  /* Smooth fade transition per step (0 = instant) */
 
     /* Modes */

@@ -108,7 +108,7 @@ static void settings_sanitize(staircase_settings_t *s)
     if (s->off_effect > 4) s->off_effect = OFF_EFFECT_WAVE;
     if (s->step_on_time_ms < 10 || s->step_on_time_ms > 5000) s->step_on_time_ms = 120;
     if (s->step_off_time_ms < 10 || s->step_off_time_ms > 5000) s->step_off_time_ms = 180;
-    if (s->hold_time_ms > 60000) s->hold_time_ms = 4000;
+    if (s->hold_time_ms > 300000 || s->hold_time_ms < 500) s->hold_time_ms = 5000;
     if (s->hostname[0] == '\0') strcpy(s->hostname, "esp-lestn");
     if (s->ntp_server[0] == '\0') strcpy(s->ntp_server, "pool.ntp.org");
     if (s->timezone_offset < -12 || s->timezone_offset > 14) s->timezone_offset = 3;
