@@ -118,25 +118,48 @@ jobs:
             - **`bootloader.bin`** и **`partition-table.bin`**: загрузчик и таблица разделов
 
             ---
-            ### 📌 Способы прошивки:
-            #### Вариант 1: Быстрый старт (1 файл `firmware_merged.bin` с адреса 0x0)
-            ```bash
-            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
-            ```
+            ### 📌 Способы прошивки и правильные адреса Flash:
 
-            #### Вариант 2: Раздельная прошивка 3 файлов
-            | Файл | Адрес Flash | Описание |
+            #### ⭐️ Вариант 1 (САМЫЙ ПРОСТОЙ И НАДЕЖНЫЙ): Полный файл `firmware_merged.bin`
+            Прошивается ВСЁ целиком (загрузчик + разметка памяти + приложение):
+            - **Файл**: `firmware_merged.bin`
+            - **Адрес (Offset)**: строго **`0x0`**
+            - **Команда esptool**:
+              ```bash
+              esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x0 firmware_merged.bin
+              ```
+            - **Через Web Serial прямо в браузере**: выберите файл `firmware_merged.bin`, укажите адрес **`0x0`** и нажмите «Прошить Flash».
+
+            ---
+
+            #### 🛠 Вариант 2: Прошивка только файла приложения (`ESP_lestn_v2.bin`)
+            Если у вас уже был зашит загрузчик и разметка Dual-OTA, файл приложения шьется по адресу слота `ota_0`:
+            - **Файл**: `ESP_lestn_v2.bin`
+            - **Адрес (Offset)**: строго **`0x20000`** (НЕ 0x10000!)
+            - **Команда esptool**:
+              ```bash
+              esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x20000 ESP_lestn_v2.bin
+              ```
+
+            ---
+
+            #### 🧩 Вариант 3: Полная раздельная прошивка 3 файлов (при чистой плате)
+            | Файл бинарника | Адрес смещения | Описание |
             | :--- | :---: | :--- |
-            | `bootloader.bin` | **`0x1000`** | Загрузчик ESP-IDF |
-            | `partition-table.bin` | **`0x8000`** | Таблица разметки Dual OTA |
-            | `ESP_lestn_v2.bin` | **`0x10000`** | Приложение умной лестницы |
+            | `bootloader.bin` | **`0x1000`** | Загрузчик ESP-IDF 2-го уровня |
+            | `partition-table.bin` | **`0x8000`** | Разметка памяти 4MB (Dual OTA) |
+            | `ESP_lestn_v2.bin` | **`0x20000`** | Приложение умной лестницы (`ota_0`) |
 
             ```bash
-            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+            esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x20000 ESP_lestn_v2.bin
             ```
 
-            #### Вариант 3: Беспроводное обновление по Wi-Fi (OTA)
-            Откройте `http://192.168.4.1/update` и выберите эту версию в меню GitHub Releases!
+            ---
+
+            #### 📶 Вариант 4: Беспроводное обновление по Wi-Fi (Dual-OTA)
+            - Откройте веб-интерфейс контроллера: `http://esp-lestn.local/update` (или по IP, например `http://192.168.4.1/update`)
+            - Загрузите только файл **`ESP_lestn_v2.bin`**
+            - ESP32 запишет его во второй раздел `ota_1`, проверит контрольную сумму и перезагрузится без кабеля!
 
       - name: Также обновляем тег 'latest' для прямой совместимости
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')

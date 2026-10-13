@@ -350,6 +350,9 @@ esp_err_t settings_post_handler(httpd_req_t *req)
     cfg->color_r = (uint8_t)web_get_post_param_int(post_buf, "cr", cfg->color_r);
     cfg->color_g = (uint8_t)web_get_post_param_int(post_buf, "cg", cfg->color_g);
     cfg->color_b = (uint8_t)web_get_post_param_int(post_buf, "cb", cfg->color_b);
+    cfg->night_color_r = (uint8_t)web_get_post_param_int(post_buf, "ncr", cfg->night_color_r);
+    cfg->night_color_g = (uint8_t)web_get_post_param_int(post_buf, "ncg", cfg->night_color_g);
+    cfg->night_color_b = (uint8_t)web_get_post_param_int(post_buf, "ncb", cfg->night_color_b);
 
     cfg->led_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_led", cfg->led_gpio);
     cfg->sensor_bottom_gpio = (uint8_t)web_get_post_param_int(post_buf, "gpio_sb", cfg->sensor_bottom_gpio);

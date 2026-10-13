@@ -13,7 +13,7 @@
 | **`firmware_merged.bin`** (~940 КБ) | **Единый файл "все-в-одному"** (рекомендуется) | **`0x0`** |
 | **`bootloader.bin`** (~26 КБ) | Вторичный загрузчик ESP32 | **`0x1000`** |
 | **`partition-table.bin`** (~3 КБ) | Таблица разделов флеш-памяти | **`0x8000`** |
-| **`ESP_lestn_v2.bin`** (~880 КБ) | Основная прошивка (или для Wi-Fi OTA) | **`0x10000`** |
+| **`ESP_lestn_v2.bin`** (~880 КБ) | Основная прошивка (или для Wi-Fi OTA) | **`0x20000`** |
 | **`flasher_args.json`** | Аргументы и адреса для esptool | — |
 
 ---
@@ -30,7 +30,7 @@
 #### Таблица адресов Flash:
 * `0x1000` ➔ `bootloader.bin`
 * `0x8000` ➔ `partition-table.bin`
-* `0x10000` ➔ `ESP_lestn_v2.bin`
+* `0x20000` ➔ `ESP_lestn_v2.bin`
 
 #### Способ 1. Через браузер (Espressif Web Flasher)
 1. Откройте в Chrome, Edge или Opera: **[https://espressif.github.io/esptool-js/](https://espressif.github.io/esptool-js/)**
@@ -40,7 +40,7 @@
 4. В таблице файлов добавьте 3 строки (кнопка `Add File`):
    * **Строка 1:** Адрес **`0x1000`** ➔ выберите файл **`bootloader.bin`**
    * **Строка 2:** Адрес **`0x8000`** ➔ выберите файл **`partition-table.bin`**
-   * **Строка 3:** Адрес **`0x10000`** ➔ выберите файл **`ESP_lestn_v2.bin`**
+   * **Строка 3:** Адрес **`0x20000`** ➔ выберите файл **`ESP_lestn_v2.bin`**
 5. Нажмите кнопку **Program**.
 6. По завершении нажмите кнопку **EN / RESET** на плате ESP32 (или переподключите USB).
 7. Контроллер поднимет собственную сеть Wi-Fi: **`ESP-Stairs-AP`** (пароль `12345678`).
@@ -50,13 +50,13 @@
 
 * **Windows (PowerShell или CMD):**
   ```bash
-  esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+  esptool.py --chip esp32 -p COM3 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x20000 ESP_lestn_v2.bin
   ```
   *(Замените `COM3` на номер вашего порта в Диспетчере устройств)*
 
 * **Linux / macOS:**
   ```bash
-  esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 ESP_lestn_v2.bin
+  esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 write_flash 0x1000 bootloader.bin 0x8000 partition-table.bin 0x20000 ESP_lestn_v2.bin
   ```
 
 ---
