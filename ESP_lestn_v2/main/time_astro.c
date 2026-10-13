@@ -123,8 +123,11 @@ void time_astro_start_sntp(void)
              cfg ? cfg->timezone_offset : 3);
 
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    const char *server = (cfg && cfg->ntp_server[0] != '\0') ? cfg->ntp_server : "pool.ntp.org";
-    esp_sntp_setservername(0, server);
+    const char *server0 = (cfg && cfg->ntp_server[0] != '\0') ? cfg->ntp_server : "pool.ntp.org";
+    esp_sntp_setservername(0, server0);
+    /* Резервные серверы времени для гарантированной синхронизации */
+    esp_sntp_setservername(1, "time.google.com");
+    esp_sntp_setservername(2, "time.windows.com");
     esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
     esp_sntp_init();
 
