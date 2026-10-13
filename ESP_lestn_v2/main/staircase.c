@@ -163,6 +163,7 @@ void staircase_apply_settings(const staircase_settings_t *new_settings)
     if (new_settings != NULL && cfg != NULL) {
         *cfg = *new_settings;
         staircase_led_init(cfg);
+        sensors_init(cfg, staircase_on_sensor_event);
         send_cmd(CMD_SETTINGS_UPDATED);
     }
 }
