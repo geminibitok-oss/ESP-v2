@@ -37,17 +37,24 @@ esp_err_t index_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<p>Таймер удержания: <strong id='hold-time'>%u мс</strong></p>", (unsigned int)staircase_get_hold_remaining_ms());
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<div class='grid'><div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Нижний датчик</div>");
-    snprintf(buf, sizeof(buf), "<span id='sensor-bottom' class='badge %s'>%s</span></div>",
-        sensor_bottom_active() ? "badge-green" : "badge-red",
-        sensor_bottom_active() ? "АКТИВЕН" : "НЕТ");
-    httpd_resp_sendstr_chunk(req, buf);
-
-    httpd_resp_sendstr_chunk(req, "<div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'><div>Верхний датчик</div>");
-    snprintf(buf, sizeof(buf), "<span id='sensor-top' class='badge %s'>%s</span></div></div>",
-        sensor_top_active() ? "badge-green" : "badge-red",
-        sensor_top_active() ? "АКТИВЕН" : "НЕТ");
-    httpd_resp_sendstr_chunk(req, buf);
+    httpd_resp_sendstr_chunk(req,
+        "<div class='grid'>"
+        "<div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'>"
+        "<div style='font-weight:600;margin-bottom:4px'>Нижний датчик</div>"
+        "<span id='sensor-bottom' class='badge badge-red'>НЕТ</span>"
+        "<div id='dist-box-bottom' style='font-size:12px;color:#38bdf8;margin-top:6px;font-family:monospace'>"
+        "Дистанция: <strong id='dist-bottom'>--</strong> см"
+        "</div>"
+        "</div>"
+        "<div style='background:#0f172a;padding:12px;border-radius:8px;text-align:center'>"
+        "<div style='font-weight:600;margin-bottom:4px'>Верхний датчик</div>"
+        "<span id='sensor-top' class='badge badge-red'>НЕТ</span>"
+        "<div id='dist-box-top' style='font-size:12px;color:#38bdf8;margin-top:6px;font-family:monospace'>"
+        "Дистанция: <strong id='dist-top'>--</strong> см"
+        "</div>"
+        "</div>"
+        "</div>"
+    );
 
     httpd_resp_sendstr_chunk(req,
         "<div class='grid'>"

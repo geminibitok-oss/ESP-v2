@@ -810,7 +810,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "<button type='button' class='btn btn-sm' onclick='toggleAll(true)'>Развернуть все</button>"
         "<button type='button' class='btn btn-sm' style='background:#475569' onclick='toggleAll(false)'>Свернуть все</button>"
         "</div>"
-        "<details open><summary>🪜 1. Параметры лестницы и ленты</summary><div class='sec-body'>"
+        "<details class='st-sec' open><summary>🪜 1. Параметры лестницы и ленты</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Количество ступеней</label>"
     );
@@ -841,7 +841,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "</div></details>"
-        "<details open><summary>🚪 2. Первая и последняя ступень (дежурный свет)</summary><div class='sec-body'>"
+        "<details class='st-sec'><summary>🚪 2. Первая и последняя ступень (дежурный свет)</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Первая ступень (Снизу, #1)</label><select name='en_first'>"
     );
@@ -897,7 +897,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "</div></details>"
-        "<details open><summary>✨ 3. Световые эффекты и тайминги</summary><div class='sec-body'>"
+        "<details class='st-sec'><summary>✨ 3. Световые эффекты и тайминги</summary><div class='sec-body'>"
         "<div class='grid'><div class='form-group'><label>Эффект включения</label><select name='anim_eff'>");
     snprintf(buf, sizeof(buf),
         "<option value='0' %s>Классическая волна</option>"
@@ -975,7 +975,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "</div></details>"
-        "<details><summary>📡 5. Датчики движения и выводы GPIO</summary><div class='sec-body'>"
+        "<details class='st-sec'><summary>📡 5. Датчики движения и выводы GPIO</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Тип датчиков</label><select name='sensor_type'>"
     );
@@ -987,6 +987,12 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     );
     httpd_resp_sendstr_chunk(req, buf);
 
+        httpd_resp_sendstr_chunk(req,
+        "<div id='us_live_info' style='margin:10px 0;padding:10px 14px;background:#0b1329;border-radius:8px;border:1px solid #1d4ed8;font-size:12px'>"
+        "<div style='font-weight:600;color:#60a5fa;margin-bottom:4px'>Текущие замеры HC-SR04 в реальном времени:</div>"
+        "<div>Нижний датчик: <strong id='set_d_bot' style='color:#38bdf8'>--</strong> см | Верхний датчик: <strong id='set_d_top' style='color:#38bdf8'>--</strong> см</div>"
+        "</div>"
+    );
     httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Порог HC-SR04 (см)</label>");
     snprintf(buf, sizeof(buf), "<input type='number' name='us_trigger_dist' value='%u' min='10' max='300'></div></div>", (unsigned int)cfg->ultrasonic_trigger_distance_cm);
     httpd_resp_sendstr_chunk(req, buf);
