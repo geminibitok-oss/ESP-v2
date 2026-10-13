@@ -24,6 +24,7 @@ esp_err_t api_state_handler(httpd_req_t *req)
         "\"time_synced\":%s,\"current_time\":\"%s\",\"sunrise\":\"%s\",\"sunset\":\"%s\",\"is_night\":%s,"
         "\"schedule_mode\":%u,\"next_switch\":\"%s\",\"steps\":[",
         staircase_get_state_str(),
+        staircase_is_party_mode() ? "true" : "false",
         (unsigned int)staircase_get_hold_remaining_ms(),
         sensor_bottom_active() ? "true" : "false",
         sensor_top_active() ? "true" : "false",
@@ -61,9 +62,13 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
         if (httpd_query_key_value(query, "dir", dir, sizeof(dir)) == ESP_OK)
         {
             if (strcmp(dir, "bottom") == 0) {
-                staircase_trigger_bottom();
+                staircase_force_trigger_bottom();
             } else if (strcmp(dir, "top") == 0) {
-                staircase_trigger_top();
+                staircase_force_trigger_top();
+            } else if (strcmp(dir, "party_on") == 0) {
+                staircase_set_party_mode(true);
+            } else if (strcmp(dir, "party_off") == 0) {
+                staircase_set_party_mode(false);
             } else if (strcmp(dir, "all_on") == 0) {
                 staircase_set_manual_on();
             } else if (strcmp(dir, "all_off") == 0) {

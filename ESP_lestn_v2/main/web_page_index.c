@@ -96,9 +96,21 @@ esp_err_t index_handler(httpd_req_t *req)
     const char *script =
         "</div></div>"
         "<script>"
-        "function updateState(){"
+        "        var isPartyActive = false;
+        function togglePartyMode(){
+            isPartyActive = !isPartyActive;
+            fetch('/api/trigger?dir=' + (isPartyActive ? 'party_on' : 'party_off')).then(updateState);
+        }
+function updateState(){
+"
         "fetch('/api/state').then(r=>r.json()).then(d=>{"
-        "document.getElementById('stair-state').innerText=d.state;"
+        "document.getElementById('stair-state').innerText=d.state;
+        var pBtn = document.getElementById('party-btn');
+        if(pBtn && d.is_party !== undefined){
+            isPartyActive = d.is_party;
+            pBtn.innerText = d.is_party ? '🛑 Отключить режим Праздник' : '🎉 Режим «Праздник» (Бесконечный эффект)';
+            pBtn.style.background = d.is_party ? '#dc2626' : '#a855f7';
+        }"
         "document.getElementById('hold-time').innerText=d.hold_ms+' мс';"
         "if(d.current_time){document.getElementById('clock-time').innerText=d.current_time+(d.time_synced?' (NTP)':' (RTC)');}"
         "if(d.sunrise){document.getElementById('sun-rise').innerText=d.sunrise;}"

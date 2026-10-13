@@ -20,7 +20,9 @@ typedef enum
     CMD_TOGGLE_MANUAL,
     CMD_SETTINGS_UPDATED,
     CMD_ASTRO_EVENT,
-    CMD_RESET_SENSORS
+    CMD_RESET_SENSORS,
+    CMD_PARTY_ON,
+    CMD_PARTY_OFF
 } stair_cmd_type_t;
 
 typedef struct
@@ -50,6 +52,7 @@ const char* staircase_get_state_str(void)
         case STAIR_STATE_TURNING_OFF_UP:   return "ВЫКЛЮЧЕНИЕ (СНИЗУ ВВЕРХ)";
         case STAIR_STATE_TURNING_OFF_DOWN: return "ВЫКЛЮЧЕНИЕ (СВЕРХУ ВНИЗ)";
         case STAIR_STATE_MANUAL_ON:        return "РУЧНОЙ РЕЖИМ (ВКЛ)";
+        case STAIR_STATE_PARTY_MODE:      return "🎉 РЕЖИМ ПРАЗДНИК (БЕСКОНЕЧНЫЙ ЭФФЕКТ)";
         default:                           return "НЕИЗВЕСТНО";
     }
 }
@@ -107,6 +110,35 @@ void staircase_reset_sensors(void)
     ESP_LOGI(TAG, "Manual reset sensors requested");
     send_cmd(CMD_RESET_SENSORS);
 }
+void staircase_force_trigger_bottom(void)
+{
+    ESP_LOGI(TAG, "FORCE trigger bottom requested (ignores sensor state)");
+    /* Очищаем очередь команд от старых датчиков */
+    stair_cmd_t dummy;
+    while (xQueueReceive(cmd_queue, &dummy, 0) == pdTRUE) {}
+    /* Если лестница была в удержании или выключении - мгновенно перезапускаем анимацию снизу */
+    send_cmd(CMD_TRIGGER_BOTTOM);
+}
+
+void staircase_force_trigger_top(void)
+{
+    ESP_LOGI(TAG, "FORCE trigger top requested (ignores sensor state)");
+    stair_cmd_t dummy;
+    while (xQueueReceive(cmd_queue, &dummy, 0) == pdTRUE) {}
+    send_cmd(CMD_TRIGGER_TOP);
+}
+
+void staircase_set_party_mode(bool enable)
+{
+    if (enable) send_cmd(CMD_PARTY_ON);
+    else send_cmd(CMD_PARTY_OFF);
+}
+
+bool staircase_is_party_mode(void)
+{
+    return (current_state == STAIR_STATE_PARTY_MODE);
+}
+
 
 void staircase_on_sensor_event(sensor_event_type_t event)
 {
@@ -173,6 +205,10 @@ static void staircase_fsm_task(void *pvParameters)
                     current_state = STAIR_STATE_TURNING_ON_DOWN;
                     entered_from_bottom = false;
                 }
+                else if (cmd.type == CMD_PARTY_ON)
+                {
+                    current_state = STAIR_STATE_PARTY_MODE;
+                }
                 else if (cmd.type == CMD_MANUAL_ON || cmd.type == CMD_TOGGLE_MANUAL)
                 {
                     staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
@@ -183,6 +219,54 @@ static void staircase_fsm_task(void *pvParameters)
                     if (cfg->night_mode) staircase_led_apply_night_mode(cfg);
                     else staircase_led_clear();
                     current_state = STAIR_STATE_IDLE;
+                }
+            }
+        }
+
+        /* PARTY MODE State: бесконечная циклическая анимация выбранного эффекта пока не отключат */
+        else if (current_state == STAIR_STATE_PARTY_MODE)
+        {
+            uint8_t eff = cfg->anim_effect;
+            uint16_t total = cfg->steps;
+            uint16_t del = cfg->step_on_time_ms < 30 ? 30 : cfg->step_on_time_ms;
+
+            /* Бегущая волна выбранного эффекта снизу вверх, затем мягкая смена */
+            for (uint16_t s = 0; s < total; s++)
+            {
+                staircase_led_set_step_scaled(s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(del)) == pdTRUE) {
+                    if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
+                        current_state = STAIR_STATE_IDLE;
+                        staircase_led_clear();
+                        break;
+                    }
+                }
+            }
+
+            if (current_state == STAIR_STATE_PARTY_MODE) {
+                /* Удержание эффекта 1.5 секунды */
+                for (int i = 0; i < 30; i++) {
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+                        if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
+                            current_state = STAIR_STATE_IDLE;
+                            staircase_led_clear();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (current_state == STAIR_STATE_PARTY_MODE) {
+                /* Плавное мягкое затухание для следующего цикла праздника */
+                for (uint16_t s = 0; s < total; s++) {
+                    staircase_led_set_step_scaled(s, 0, 0, 0, 0);
+                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(del / 2)) == pdTRUE) {
+                        if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
+                            current_state = STAIR_STATE_IDLE;
+                            staircase_led_clear();
+                            break;
+                        }
+                    }
                 }
             }
         }
