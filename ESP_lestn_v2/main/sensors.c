@@ -92,8 +92,8 @@ static void sensor_processing_task(void *pvParameters)
     int64_t last_bottom_change_time = 0;
     int64_t last_top_change_time = 0;
 
-    ESP_LOGI(TAG, "Sensor monitoring task started (type=%u, debounce=%u ms, active_high=%d)", 
-             sensor_type, debounce_ms, active_high);
+    ESP_LOGI(TAG, "Sensor task started: Bottom Type=%u (thresh=%u cm), Top Type=%u (thresh=%u cm), Debounce=%u ms",
+             sensor_bottom_type, bottom_threshold_cm, sensor_top_type, top_threshold_cm, debounce_ms);
 
     while (1)
     {
