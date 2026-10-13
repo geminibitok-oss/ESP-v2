@@ -30,6 +30,7 @@ static esp_netif_t *sta_netif = NULL;
 static esp_netif_t *ap_netif = NULL;
 
 static esp_err_t start_ap_internal(void);
+static void start_mdns_service(void);
 
 static void wifi_event_handler(
     void *arg,
