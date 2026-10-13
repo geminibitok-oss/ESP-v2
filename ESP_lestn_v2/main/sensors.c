@@ -34,31 +34,33 @@ static uint16_t current_top_dist_cm = 999;
 /* Измерение расстояния ультразвуковым датчиком HC-SR04 (см) */
 static uint16_t measure_hcsr04_distance(uint8_t trig_pin, uint8_t echo_pin)
 {
-    // Отправляем 10 мкс стартовый импульс TRIG
+    /* 1. Убедимся, что TRIG в нуле перед стартом */
     gpio_set_level(trig_pin, 0);
-    esp_rom_delay_us(4);
+    esp_rom_delay_us(5);
+
+    /* 2. Подаем точный 10-12 мкс импульс запуска */
     gpio_set_level(trig_pin, 1);
-    esp_rom_delay_us(10);
+    esp_rom_delay_us(12);
     gpio_set_level(trig_pin, 0);
 
-    // Ждем начала эхо-сигнала (HIGH) с таймаутом 25000 мкс
+    /* 3. Ожидаем появления фронта HIGH на ECHO (таймаут 12 мс) */
     int64_t wait_start = esp_timer_get_time();
     while (gpio_get_level(echo_pin) == 0) {
-        if ((esp_timer_get_time() - wait_start) > 25000) {
-            return 999; // Таймаут
+        if ((esp_timer_get_time() - wait_start) > 12000) {
+            return 999; /* Датчик не подключен или не отвечает */
         }
     }
 
-    // Замеряем длительность импульса ECHO
+    /* 4. Замеряем длительность импульса ECHO (таймаут 25 мс ~= 430 см) */
     int64_t echo_start = esp_timer_get_time();
     while (gpio_get_level(echo_pin) == 1) {
-        if ((esp_timer_get_time() - echo_start) > 30000) {
-            return 999; // Выход за пределы (~5 метров)
+        if ((esp_timer_get_time() - echo_start) > 26000) {
+            return 999; /* Выход за пределы дистанции */
         }
     }
     int64_t echo_duration_us = esp_timer_get_time() - echo_start;
 
-    // Скорость звука: ~58 мкс на 1 см дистанции (туда и обратно)
+    /* 5. Пересчет времени пролета в сантиметры */
     uint32_t dist_cm = (uint32_t)(echo_duration_us / 58);
     if (dist_cm > 400 || dist_cm < 2) {
         return 999;

@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
-#include "mdns.h" 
+#include "mdns.h"
+#include "time_astro.h" 
 
 #include <stdio.h>
 #include <string.h>
@@ -88,6 +89,8 @@ static void wifi_event_handler(
         ESP_LOGI(TAG, "Wi-Fi connected successfully, IP: %s", ip_address);
         printf("\r\n===================================================\r\n");
         start_mdns_service();
+        /* Запускаем SNTP синхронизацию времени сразу после получения IP от роутера */
+        time_astro_start_sntp();
         const char *hname = (cfg && cfg->hostname[0] != '\0') ? cfg->hostname : "esp-lestn";
         printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
         printf(" >>>  IP: %s  <<<\r\n", ip_address);
