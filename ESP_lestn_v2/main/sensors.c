@@ -128,6 +128,7 @@ esp_err_t sensors_init(
         return err;
     }
 
+    /* We use ESP_INTR_FLAG_LOWMED (or 0) without IRAM flag to avoid cache-disabled panic during flash operations */
     err = gpio_install_isr_service(0);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(err));

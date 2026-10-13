@@ -47,6 +47,8 @@ jobs:
           echo 'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"' >> sdkconfig.defaults
           echo "CONFIG_HTTPD_MAX_REQ_HDR_LEN=4096" >> sdkconfig.defaults
           echo "CONFIG_HTTPD_MAX_URI_LEN=1024" >> sdkconfig.defaults
+          # Отключаем CONFIG_RMT_ISR_IRAM_SAFE, так как обращение к Flash-памяти в обработчиках без IRAM вызывало Guru Meditation Panic
+          echo "# CONFIG_RMT_ISR_IRAM_SAFE is not set" >> sdkconfig.defaults
           idf.py set-target ${{ github.event.inputs.target || 'esp32' }}
 
       - name: Сборка прошивки

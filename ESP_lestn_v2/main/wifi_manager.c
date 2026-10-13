@@ -113,7 +113,7 @@ static esp_err_t start_ap_internal(void)
         }
     };
 
-    esp_wifi_stop();
+    esp_wifi_stop(); /* Ignore error if not running */
     esp_err_t err = esp_wifi_set_mode(WIFI_MODE_AP);
     if (err != ESP_OK) return err;
 

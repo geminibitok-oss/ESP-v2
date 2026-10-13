@@ -56,18 +56,23 @@ void app_main(void)
     ESP_ERROR_CHECK(staircase_init(&settings));
 
     /* Initialize Motion Sensors with debouncing task and FSM dispatcher */
+    ESP_LOGI(TAG, "Step 1: Initializing sensors...");
     ESP_ERROR_CHECK(sensors_init(&settings, staircase_on_sensor_event));
 
     /* Start Staircase Animation FSM Task */
+    ESP_LOGI(TAG, "Step 2: Starting staircase FSM...");
     staircase_start();
 
     /* Initialize Wi-Fi Manager (Connects to STA or launches Fallback AP) */
+    ESP_LOGI(TAG, "Step 3: Initializing Wi-Fi Manager...");
     ESP_ERROR_CHECK(wifi_manager_init(&settings));
 
     /* Initialize Internet Time (NTP) & Astronomical Sunset/Sunrise Engine */
+    ESP_LOGI(TAG, "Step 4: Initializing Time & Astro Engine...");
     ESP_ERROR_CHECK(time_astro_init(&settings, staircase_on_astro_event));
 
     /* Start Embedded HTTP Web Server */
+    ESP_LOGI(TAG, "Step 5: Starting HTTP Web Server...");
     ESP_ERROR_CHECK(web_server_start(&settings));
 
     ESP_LOGI(TAG, "Staircase controller operational. Web UI accessible at http://%s", wifi_manager_get_ip());
