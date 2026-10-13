@@ -16,10 +16,12 @@ static uint8_t bottom_gpio = STAIR_DEFAULT_SENSOR_BOTTOM_GPIO;
 static uint8_t top_gpio = STAIR_DEFAULT_SENSOR_TOP_GPIO;
 static uint8_t bottom_echo_gpio = 18;
 static uint8_t top_echo_gpio = 19;
-static uint8_t sensor_type = 0; // 0 = PIR, 1 = HC-SR04
-static uint16_t us_trigger_dist_cm = 80;
-static uint16_t us_max_dist_cm = 200;
-static bool active_high = true;
+static uint8_t sensor_bottom_type = 0; // 0 = PIR, 1 = HC-SR04
+static uint8_t sensor_top_type = 0;    // 0 = PIR, 1 = HC-SR04
+static bool bottom_active_high = true;
+static bool top_active_high = true;
+static uint16_t bottom_threshold_cm = 80;
+static uint16_t top_threshold_cm = 80;
 static uint16_t debounce_ms = 60;
 
 static QueueHandle_t isr_evt_queue = NULL;
@@ -77,10 +79,10 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     }
 }
 
-static bool check_pin_active(uint8_t gpio_num)
+static bool check_pin_active(uint8_t gpio_num, bool is_high_active)
 {
     int level = gpio_get_level(gpio_num);
-    return active_high ? (level == 1) : (level == 0);
+    return is_high_active ? (level == 1) : (level == 0);
 }
 
 /* Background FreeRTOS task handling debounce, HC-SR04 distance measurement and dispatching */
@@ -99,24 +101,33 @@ static void sensor_processing_task(void *pvParameters)
         bool cur_bottom = false;
         bool cur_top = false;
 
-        if (sensor_type == 1) {
-            /* Режим ультразвуковых датчиков HC-SR04 */
+        /* Опрос нижнего датчика */
+        if (sensor_bottom_type == 1) {
             uint16_t d_bot = measure_hcsr04_distance(bottom_gpio, bottom_echo_gpio);
-            vTaskDelay(pdMS_TO_TICKS(15)); // Пауза для затухания акустического эха
-            uint16_t d_top = measure_hcsr04_distance(top_gpio, top_echo_gpio);
-
             if (d_bot != 999) current_bottom_dist_cm = d_bot;
-            if (d_top != 999) current_top_dist_cm = d_top;
-
-            cur_bottom = (d_bot > 0 && d_bot <= us_trigger_dist_cm);
-            cur_top = (d_top > 0 && d_top <= us_trigger_dist_cm);
-
-            vTaskDelay(pdMS_TO_TICKS(50));
+            cur_bottom = (d_bot > 0 && d_bot <= bottom_threshold_cm);
         } else {
-            /* Режим стандартных PIR / оптических датчиков */
+            cur_bottom = check_pin_active(bottom_gpio, bottom_active_high);
+        }
+
+        /* Небольшая пауза между эхо-импульсами, если оба датчика ультразвуковые */
+        if (sensor_bottom_type == 1 && sensor_top_type == 1) {
+            vTaskDelay(pdMS_TO_TICKS(15));
+        }
+
+        /* Опрос верхнего датчика */
+        if (sensor_top_type == 1) {
+            uint16_t d_top = measure_hcsr04_distance(top_gpio, top_echo_gpio);
+            if (d_top != 999) current_top_dist_cm = d_top;
+            cur_top = (d_top > 0 && d_top <= top_threshold_cm);
+        } else {
+            cur_top = check_pin_active(top_gpio, top_active_high);
+        }
+
+        if (sensor_bottom_type == 1 || sensor_top_type == 1) {
+            vTaskDelay(pdMS_TO_TICKS(40));
+        } else {
             xQueueReceive(isr_evt_queue, &io_num, pdMS_TO_TICKS(25));
-            cur_bottom = check_pin_active(bottom_gpio);
-            cur_top = check_pin_active(top_gpio);
         }
 
         /* Evaluate Bottom Sensor */
@@ -158,69 +169,58 @@ esp_err_t sensors_init(
     top_gpio = settings->sensor_top_gpio;
     bottom_echo_gpio = settings->sensor_bottom_echo_gpio;
     top_echo_gpio = settings->sensor_top_echo_gpio;
-    sensor_type = settings->sensor_type;
-    us_trigger_dist_cm = settings->ultrasonic_trigger_distance_cm > 0 ? settings->ultrasonic_trigger_distance_cm : 80;
-    us_max_dist_cm = settings->ultrasonic_max_distance_cm > 0 ? settings->ultrasonic_max_distance_cm : 200;
-    active_high = settings->sensor_active_high;
+
+    // Поддержка раздельных типов датчиков
+    sensor_bottom_type = settings->sensor_bottom_type;
+    sensor_top_type = settings->sensor_top_type;
+    bottom_active_high = settings->sensor_bottom_active_high;
+    top_active_high = settings->sensor_top_active_high;
+    bottom_threshold_cm = settings->sensor_bottom_threshold_cm > 0 ? settings->sensor_bottom_threshold_cm : 80;
+    top_threshold_cm = settings->sensor_top_threshold_cm > 0 ? settings->sensor_top_threshold_cm : 80;
     debounce_ms = settings->sensor_debounce_ms > 0 ? settings->sensor_debounce_ms : 60;
     event_callback = cb;
 
-    if (sensor_type == 1) {
-        // Конфигурация для HC-SR04: TRIG как OUTPUT, ECHO как INPUT
-        gpio_config_t trig_conf = {
-            .pin_bit_mask = (1ULL << bottom_gpio) | (1ULL << top_gpio),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        gpio_config(&trig_conf);
+    /* Инициализация нижнего датчика */
+    if (sensor_bottom_type == 1) {
+        gpio_set_direction(bottom_gpio, GPIO_MODE_OUTPUT);
         gpio_set_level(bottom_gpio, 0);
-        gpio_set_level(top_gpio, 0);
-
-        gpio_config_t echo_conf = {
-            .pin_bit_mask = (1ULL << bottom_echo_gpio) | (1ULL << top_echo_gpio),
-            .mode = GPIO_MODE_INPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_ENABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        gpio_config(&echo_conf);
-        ESP_LOGI(TAG, "HC-SR04 configured: Bottom TRIG=%u ECHO=%u | Top TRIG=%u ECHO=%u (Threshold=%u cm)",
-                 bottom_gpio, bottom_echo_gpio, top_gpio, top_echo_gpio, us_trigger_dist_cm);
+        gpio_set_direction(bottom_echo_gpio, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(bottom_echo_gpio, GPIO_PULLDOWN_ONLY);
     } else {
-        // Конфигурация для PIR датчиков
-        if (isr_evt_queue == NULL) {
-            isr_evt_queue = xQueueCreate(16, sizeof(uint32_t));
-            if (isr_evt_queue == NULL) {
-                ESP_LOGE(TAG, "Failed to create sensor ISR queue");
-                return ESP_ERR_NO_MEM;
-            }
-        }
-
-        gpio_config_t io_conf = {
-            .pin_bit_mask = (1ULL << bottom_gpio) | (1ULL << top_gpio),
-            .mode = GPIO_MODE_INPUT,
-            .pull_up_en = active_high ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE,
-            .pull_down_en = active_high ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_ANYEDGE
-        };
-        esp_err_t err = gpio_config(&io_conf);
-        if (err != ESP_OK) return err;
-
-        err = gpio_install_isr_service(0);
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-            return err;
-        }
-
-        gpio_isr_handler_remove(bottom_gpio);
-        gpio_isr_handler_remove(top_gpio);
-        gpio_isr_handler_add(bottom_gpio, gpio_isr_handler, (void *)(uint32_t)bottom_gpio);
-        gpio_isr_handler_add(top_gpio, gpio_isr_handler, (void *)(uint32_t)top_gpio);
+        gpio_set_direction(bottom_gpio, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(bottom_gpio, bottom_active_high ? GPIO_PULLDOWN_ONLY : GPIO_PULLUP_ONLY);
     }
 
-    last_bottom_active = check_pin_active(bottom_gpio);
-    last_top_active = check_pin_active(top_gpio);
+    /* Инициализация верхнего датчика */
+    if (sensor_top_type == 1) {
+        gpio_set_direction(top_gpio, GPIO_MODE_OUTPUT);
+        gpio_set_level(top_gpio, 0);
+        gpio_set_direction(top_echo_gpio, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(top_echo_gpio, GPIO_PULLDOWN_ONLY);
+    } else {
+        gpio_set_direction(top_gpio, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(top_gpio, top_active_high ? GPIO_PULLDOWN_ONLY : GPIO_PULLUP_ONLY);
+    }
+
+    if (sensor_bottom_type == 0 || sensor_top_type == 0) {
+        if (isr_evt_queue == NULL) {
+            isr_evt_queue = xQueueCreate(16, sizeof(uint32_t));
+        }
+        gpio_install_isr_service(0);
+        if (sensor_bottom_type == 0) {
+            gpio_set_intr_type(bottom_gpio, GPIO_INTR_ANYEDGE);
+            gpio_isr_handler_remove(bottom_gpio);
+            gpio_isr_handler_add(bottom_gpio, gpio_isr_handler, (void *)(uint32_t)bottom_gpio);
+        }
+        if (sensor_top_type == 0) {
+            gpio_set_intr_type(top_gpio, GPIO_INTR_ANYEDGE);
+            gpio_isr_handler_remove(top_gpio);
+            gpio_isr_handler_add(top_gpio, gpio_isr_handler, (void *)(uint32_t)top_gpio);
+        }
+    }
+
+    last_bottom_active = (sensor_bottom_type == 0) ? check_pin_active(bottom_gpio, bottom_active_high) : false;
+    last_top_active = (sensor_top_type == 0) ? check_pin_active(top_gpio, top_active_high) : false;
 
     if (sensor_task_handle == NULL) {
         BaseType_t task_created = xTaskCreate(
@@ -273,7 +273,7 @@ void sensors_reset_state(void)
 
 bool sensor_is_ultrasonic(void)
 {
-    return (sensor_type == 1);
+    return (sensor_bottom_type == 1 || sensor_top_type == 1);
 }
 
 uint16_t sensor_bottom_distance_cm(void)

@@ -104,9 +104,15 @@ typedef struct
     bool night_first_step;      /* true = first step lit in night mode, false = off at night */
     bool night_last_step;       /* true = last step lit in night mode, false = off at night */
 
-    /* Sensor filter & Ultrasonic HC-SR04 */
+    /* Sensor filter & Independent Sensor Types */
     uint16_t sensor_debounce_ms; /* Debounce time in ms */
-    uint8_t sensor_type;         /* 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic */
+    uint8_t sensor_type;         /* 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic (backward compat) */
+    uint8_t sensor_bottom_type;  /* 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic */
+    uint8_t sensor_top_type;     /* 0 = PIR/Optical, 1 = HC-SR04 Ultrasonic */
+    bool sensor_bottom_active_high; /* true = HIGH (3.3V), false = LOW (GND) */
+    bool sensor_top_active_high;    /* true = HIGH (3.3V), false = LOW (GND) */
+    uint16_t sensor_bottom_threshold_cm; /* Distance threshold in cm (e.g. 80) */
+    uint16_t sensor_top_threshold_cm;    /* Distance threshold in cm (e.g. 80) */
     uint8_t sensor_bottom_echo_gpio;
     uint8_t sensor_top_echo_gpio;
     uint16_t ultrasonic_trigger_distance_cm; /* Distance threshold in cm (e.g. 80) */
