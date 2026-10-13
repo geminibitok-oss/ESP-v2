@@ -26,7 +26,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         httpd_resp_sendstr_chunk(req,
             "<div id='save-toast' style='position:sticky;top:10px;z-index:999;margin-bottom:14px;padding:14px 18px;background:#15803d;color:#fff;border-radius:10px;font-weight:600;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:space-between;animation:fadeIn 0.3s ease-in-out'>"
             "<span>✅ НАСТРОЙКИ УСПЕШНО СОХРАНЕНЫ В FLASH (NVS)!</span>"
-            "<button type='button' style='background:none;border:none;color:#fff;font-size:18px;cursor:pointer' onclick='this.parentElement.style.display="none"'>✕</button>"
+            "<button type='button' style='background:none;border:none;color:#fff;font-size:18px;cursor:pointer' onclick=\"this.parentElement.style.display='none'\">✕</button>"
             "</div>"
         );
     }
