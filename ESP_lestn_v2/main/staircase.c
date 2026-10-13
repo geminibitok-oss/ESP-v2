@@ -74,7 +74,7 @@ static void send_cmd(stair_cmd_type_t type)
 {
     if (cmd_queue != NULL) {
         stair_cmd_t cmd = { .type = type };
-        xQueueSend(cmd_queue, &cmd, 0);
+        xQueueSend(cmd_queue, &cmd, pdMS_TO_TICKS(50));
     }
 }
 
@@ -130,8 +130,17 @@ void staircase_force_trigger_top(void)
 
 void staircase_set_party_mode(bool enable)
 {
-    if (enable) send_cmd(CMD_PARTY_ON);
-    else send_cmd(CMD_PARTY_OFF);
+    ESP_LOGI(TAG, "Setting party mode: %d", enable);
+    if (enable) {
+        /* Очищаем очередь, чтобы мгновенно перехватить FSM */
+        stair_cmd_t dummy;
+        while (xQueueReceive(cmd_queue, &dummy, 0) == pdTRUE) {}
+        current_state = STAIR_STATE_PARTY_MODE;
+        send_cmd(CMD_PARTY_ON);
+    } else {
+        current_state = STAIR_STATE_IDLE;
+        send_cmd(CMD_PARTY_OFF);
+    }
 }
 
 bool staircase_is_party_mode(void)
@@ -235,7 +244,7 @@ static void staircase_fsm_task(void *pvParameters)
             {
                 staircase_led_set_step_scaled(s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                 if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(del)) == pdTRUE) {
-                    if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
+                    if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF || cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) {
                         current_state = STAIR_STATE_IDLE;
                         staircase_led_clear();
                         break;
