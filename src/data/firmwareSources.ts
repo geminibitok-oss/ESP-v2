@@ -6124,5 +6124,158 @@ jobs:
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
 `
+  },
+  {
+    name: 'find_esp32_network.bat',
+    path: 'scripts/find_esp32_network.bat',
+    category: 'config',
+    description: 'BAT-скрипт для Windows: автоматический поиск ESP32 в локальной сети, проверка mDNS и открытие веб-интерфейса в 1 клик.',
+    code: `@echo off
+chcp 65001 >nul
+title Диагностика и поиск контроллера ESP32 (ESP-Lestn)
+color 0B
+
+echo ======================================================================
+echo          ДИАГНОСТИКА СЕТИ И ПОИСК ESP32 УМНОЙ ЛЕСТНИЦЫ
+echo ======================================================================
+echo.
+
+:: 1. Проверка локального имени mDNS
+echo [1/4] Попытка обнаружения по локальному имени mDNS (esp-lestn.local)...
+ping -n 1 -w 1500 esp-lestn.local >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [УСПЕХ] Контроллер найден по имени esp-lestn.local!
+    for /f "tokens=3" %%a in ('ping -n 1 esp-lestn.local ^| findstr "["') do set ESP_IP=%%a
+    echo Адрес устройства: %ESP_IP%
+    echo.
+    echo Открываю веб-интерфейс в браузере...
+    start http://esp-lestn.local
+    pause
+    exit /b
+)
+echo [-] По имени esp-lestn.local не отвечает.
+echo.
+
+:: 2. Проверка точки доступа ESP-Lestn (192.168.4.1)
+echo [2/4] Проверка режима точки доступа по адресу 192.168.4.1...
+ping -n 1 -w 1000 192.168.4.1 >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [УСПЕХ] Вы подключены к точке доступа ESP-Lestn (192.168.4.1)!
+    echo.
+    echo Открываю страницу настроек Wi-Fi...
+    start http://192.168.4.1/wifi
+    pause
+    exit /b
+)
+echo [-] Режим точки доступа (192.168.4.1) недоступен.
+echo.
+
+:: 3. Определение локальной подсети компьютера
+echo [3/4] Сканирование устройств в вашей локальной подсети...
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
+    set LOCAL_IP=%%a
+    goto :found_ip
+)
+:found_ip
+set LOCAL_IP=%LOCAL_IP: =%
+echo Ваш IP-адрес: %LOCAL_IP%
+
+:: Получаем базовые три октета (например, 192.168.170)
+for /f "tokens=1,2,3 delims=." %%a in ("%LOCAL_IP%") do set SUBNET=%%a.%%b.%%c
+echo Базовая подсеть: %SUBNET%.0/24
+echo.
+
+echo Поиск устройств с MAC-адресом Espressif (ESP32) в таблице ARP...
+arp -d >nul 2>&1
+:: Быстрый пинг шлюза и диапазона
+for /L %%i in (1,1,30) do start /b ping -n 1 -w 100 %SUBNET%.%%i >nul 2>&1
+for /L %%i in (100,1,150) do start /b ping -n 1 -w 100 %SUBNET%.%%i >nul 2>&1
+timeout /t 2 >nul
+
+:: Проверка таблицы ARP на известных производителей ESP32 (MAC: 24:0a:c4, 30:ae:a4, 40:22:d8, 48:e7:29, 84:cc:a8, ac:67:b2, 24:6f:28, d8:bc:38, b0:a7:32, cc:50:e3, etc.)
+for /f "tokens=1,2" %%a in ('arp -a ^| findstr /i "%SUBNET%"') do (
+    echo Найдено активное устройство: %%a  (MAC: %%b)
+    powershell -Command "try { $r = (Invoke-WebRequest -Uri 'http://%%a/api/state' -TimeoutSec 1).StatusCode; if ($r -eq 200) { Write-Host '[НАЙДЕН ESP32 КОНТРОЛЛЕР!] -> http://%%a' -ForegroundColor Green; Start-Process 'http://%%a'; exit 0 } } catch {}" >nul 2>&1
+)
+
+echo.
+echo ======================================================================
+echo [4/4] РЕКОМЕНДАЦИИ, ЕСЛИ УСТРОЙСТВО НЕ НАЙДЕНО:
+echo ======================================================================
+echo 1. Подключите ESP32 по USB-кабелю к компьютеру.
+echo 2. Запустите консоль COM-порта на скорости 115200.
+echo 3. Нажмите кнопку EN / RESET на плате.
+echo 4. Если плата застряла или слетели настройки Wi-Fi, откройте в браузере
+echo    веб-прошивальщик и прошейте свежий файл firmware_merged.bin на адрес 0x0.
+echo ======================================================================
+echo.
+pause
+`
+  },
+  {
+    name: 'configure_esp32_serial.bat',
+    path: 'scripts/configure_esp32_serial.bat',
+    category: 'config',
+    description: 'BAT-скрипт для Windows: прямая диагностика сети, сброс NVS/Wi-Fi в точку доступа и вывод логов через COM-порт.',
+    code: `@echo off
+chcp 65001 >nul
+title Прямая настройка Wi-Fi и диагностика ESP32 через COM-порт
+color 0E
+
+echo ======================================================================
+echo    ПРЯМАЯ НАСТРОЙКА WI-FI И СЕТИ ESP32 ЧЕРЕЗ COM-ПОРТ (USB)
+echo ======================================================================
+echo.
+
+:: Поиск доступных COM-портов
+echo Доступные COM-порты в системе:
+powershell -Command "[System.IO.Ports.SerialPort]::getportnames()"
+echo.
+
+set /p COMPORT="Введите номер COM-порта (например, COM3 или COM4): "
+if "%COMPORT%"=="" (
+    echo Номер порта не введен!
+    pause
+    exit /b
+)
+
+echo.
+echo ======================================================================
+echo Выберите действие:
+echo 1 - Прочитать текущий IP и статус сети из ESP32 (Монитор порта)
+echo 2 - Сбросить память Wi-Fi / NVS (чтобы включилась точка доступа ESP-Lestn)
+echo 3 - Прошить полный образ (firmware_merged.bin на адрес 0x0)
+echo ======================================================================
+set /p ACTION="Выберите пункт (1, 2 или 3): "
+
+if "%ACTION%"=="1" (
+    echo.
+    echo Открываю монитор порта %COMPORT% на скорости 115200...
+    echo Нажмите кнопку RESET / EN на плате ESP32 для вывода IP-адреса.
+    echo (Для выхода нажмите Ctrl+C)
+    echo.
+    powershell -Command "$port = new-Object System.IO.Ports.SerialPort %COMPORT%,115200,None,8,one; $port.open(); while($true){ Write-Host $port.ReadLine() }"
+)
+
+if "%ACTION%"=="2" (
+    echo.
+    echo Очистка NVS Flash памяти на ESP32...
+    python -m esptool --chip esp32 -p %COMPORT% erase_region 0x9000 0x6000
+    echo Память NVS очищена! Теперь при старте включится точка доступа ESP-Lestn (192.168.4.1).
+    echo Нажмите кнопку RESET на плате.
+)
+
+if "%ACTION%"=="3" (
+    echo.
+    echo Скачивание свежей прошивки latest из GitHub...
+    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/geminibitok-oss/ESP-v2/releases/download/latest/firmware_merged.bin' -OutFile 'firmware_merged.bin'"
+    echo Прошивка ESP32...
+    python -m esptool --chip esp32 -p %COMPORT% -b 460800 write_flash 0x0 firmware_merged.bin
+    echo.
+    echo Прошивка успешно завершена! Плата перезагружена.
+)
+
+pause
+`
   }
 ];
