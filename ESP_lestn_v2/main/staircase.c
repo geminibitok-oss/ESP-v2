@@ -226,7 +226,7 @@ static void staircase_fsm_task(void *pvParameters)
         /* PARTY MODE State: бесконечная циклическая анимация выбранного эффекта пока не отключат */
         else if (current_state == STAIR_STATE_PARTY_MODE)
         {
-            uint8_t eff = cfg->anim_effect;
+            (void)cfg->anim_effect;
             uint16_t total = cfg->steps;
             uint16_t del = cfg->step_on_time_ms < 30 ? 30 : cfg->step_on_time_ms;
 

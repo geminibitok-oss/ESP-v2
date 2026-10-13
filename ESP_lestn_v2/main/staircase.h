@@ -16,6 +16,7 @@ typedef enum
     STAIR_STATE_TURNING_OFF_UP,
     STAIR_STATE_TURNING_OFF_DOWN,
     STAIR_STATE_MANUAL_ON,
+    STAIR_STATE_PARTY_MODE,
 } staircase_state_t;
 
 esp_err_t staircase_init(staircase_settings_t *settings);
@@ -23,11 +24,15 @@ void staircase_start(void);
 
 void staircase_trigger_bottom(void);
 void staircase_trigger_top(void);
+void staircase_force_trigger_bottom(void);
+void staircase_force_trigger_top(void);
 
 void staircase_set_manual_on(void);
 void staircase_set_manual_off(void);
 void staircase_toggle_manual(void);
 void staircase_reset_sensors(void);
+void staircase_set_party_mode(bool enable);
+bool staircase_is_party_mode(void);
 
 staircase_state_t staircase_get_state(void);
 const char* staircase_get_state_str(void);
