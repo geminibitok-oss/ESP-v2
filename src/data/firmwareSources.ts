@@ -805,9 +805,12 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     web_send_html_header(req, "Настройки");
 
     httpd_resp_sendstr_chunk(req,
-        "<div class='card'>"
-        "<h2>Параметры лестницы</h2>"
         "<form method='POST' action='/settings'>"
+        "<div style='display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px'>"
+        "<button type='button' class='btn btn-sm' onclick='toggleAll(true)'>Развернуть все</button>"
+        "<button type='button' class='btn btn-sm' style='background:#475569' onclick='toggleAll(false)'>Свернуть все</button>"
+        "</div>"
+        "<details open><summary>🪜 1. Параметры лестницы и ленты</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Количество ступеней</label>"
     );
@@ -837,7 +840,8 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
-        "<h2>🪜 Подсветка первой и последней ступени</h2>"
+        "</div></details>"
+        "<details open><summary>🚪 2. Первая и последняя ступень (дежурный свет)</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Первая ступень (Снизу, #1)</label><select name='en_first'>"
     );
@@ -891,7 +895,10 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='hold' value='%u' min='500' max='60000'></div></div>", (unsigned int)cfg->hold_time_ms);
     httpd_resp_sendstr_chunk(req, buf);
 
-    httpd_resp_sendstr_chunk(req, "<h2>Эффекты анимации</h2><div class='grid'><div class='form-group'><label>Эффект включения</label><select name='anim_eff'>");
+    httpd_resp_sendstr_chunk(req,
+        "</div></details>"
+        "<details open><summary>✨ 3. Световые эффекты и тайминги</summary><div class='sec-body'>"
+        "<div class='grid'><div class='form-group'><label>Эффект включения</label><select name='anim_eff'>");
     snprintf(buf, sizeof(buf),
         "<option value='0' %s>Классическая волна</option>"
         "<option value='1' %s>Плавный подъем (Fade Wave)</option>"
@@ -967,7 +974,8 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,
-        "<h2>Датчики и GPIO</h2>"
+        "</div></details>"
+        "<details><summary>📡 5. Датчики движения и выводы GPIO</summary><div class='sec-body'>"
         "<div class='grid'>"
         "<div class='form-group'><label>Тип датчиков</label><select name='sensor_type'>"
     );
