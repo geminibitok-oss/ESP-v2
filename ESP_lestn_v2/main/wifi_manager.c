@@ -1,4 +1,5 @@
 #include "wifi_manager.h"
+#include "mdns.h" 
 
 #include <stdio.h>
 #include <string.h>
@@ -85,8 +86,11 @@ static void wifi_event_handler(
 
         ESP_LOGI(TAG, "Wi-Fi connected successfully, IP: %s", ip_address);
         printf("\r\n===================================================\r\n");
+        start_mdns_service();
+        const char *hname = (cfg && cfg->hostname[0] != '\0') ? cfg->hostname : "esp-lestn";
         printf(" [UART / WI-FI] ESP32 ПОЛУЧИЛ IP-АДРЕС В СЕТИ:\r\n");
         printf(" >>>  IP: %s  <<<\r\n", ip_address);
+        printf(" Локальное имя (mDNS): http://%s.local (или http://lestn.local)\r\n", hname);
         printf(" Веб-интерфейс доступен по ссылке: http://%s\r\n", ip_address);
         printf(" OTA-обновление: http://%s/update\r\n", ip_address);
         printf("===================================================\r\n\r\n");
@@ -133,6 +137,25 @@ static esp_err_t start_ap_internal(void)
     fflush(stdout);
 
     return ESP_OK;
+}
+
+
+static void start_mdns_service(void)
+{
+    const char *hname = (cfg && cfg->hostname[0] != '\0') ? cfg->hostname : "esp-lestn";
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS init failed: %d", err);
+        return;
+    }
+    mdns_hostname_set(hname);
+    mdns_instance_name_set("ESP32 Smart Staircase Controller");
+
+    // Add HTTP service advertisement
+    mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    mdns_service_instance_name_set("_http", "_tcp", "ESP32 Staircase Web Interface");
+
+    ESP_LOGI(TAG, "mDNS responder started: http://%s.local (also http://lestn.local)", hname);
 }
 
 static esp_err_t start_sta_internal(void)

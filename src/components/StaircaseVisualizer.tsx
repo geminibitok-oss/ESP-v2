@@ -6,7 +6,8 @@ import {
   Sun, 
   Moon, 
   Sparkles, 
-  Footprints, 
+  Footprints,
+  Users, 
   Radio, 
   Sliders, 
   Lightbulb, 
@@ -98,6 +99,37 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
+  const triggerBoth = () => {
+    clearAllAnimTimeouts();
+    setBottomSensorActive(true);
+    setTopSensorActive(true);
+    setTimeout(() => {
+      setBottomSensorActive(false);
+      setTopSensorActive(false);
+    }, 1200);
+    setDirection('up');
+    setFsmState('TURNING_ON_BOTH');
+    const total = settings.steps;
+    const half = Math.ceil(total / 2);
+    const delay = Math.max(30, settings.step_on_time_ms);
+
+    for (let i = 0; i < half; i++) {
+      const sBottom = i;
+      const sTop = total - 1 - i;
+      const t = setTimeout(() => {
+        setStepStates((prev) => {
+          const next = [...prev];
+          if (sBottom >= 0 && sBottom < total) next[sBottom] = true;
+          if (sTop >= 0 && sTop < total) next[sTop] = true;
+          return next;
+        });
+        if (i === half - 1) {
+          startHolding('up');
+        }
+      }, i * delay);
+      animTimeoutRef.current.push(t);
+    }
+  };
   const triggerBottom = () => {
     clearAllAnimTimeouts();
     setBottomSensorActive(true);
@@ -279,6 +311,8 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
         return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 animate-pulse">⬆️ Зажигание снизу вверх</span>;
       case 'TURNING_ON_DOWN':
         return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 animate-pulse">⬇️ Зажигание сверху вниз</span>;
+      case 'TURNING_ON_BOTH':
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-950/80 text-purple-300 border border-purple-700/60 animate-bounce">👥 Встречное движение (с двух сторон)</span>;
       case 'HOLDING':
         return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-700/60">⏳ Удержание: {(holdRemainingMs / 1000).toFixed(1)} с</span>;
       case 'TURNING_OFF_UP':
@@ -361,6 +395,17 @@ export const StaircaseVisualizer: React.FC<StaircaseVisualizerProps> = ({
             </span>
           </button>
 
+          <button
+            id="trigger-both-btn"
+            onClick={triggerBoth}
+            className="p-3 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 bg-purple-950/40 hover:bg-purple-900/40 border-purple-800/60 text-purple-300"
+          >
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Users className="w-4 h-4" />
+              <span>Встречное</span>
+            </div>
+            <span className="text-[10px] text-purple-400/80">Оба датчика сразу</span>
+          </button>
           <button
             id="trigger-top-btn"
             onClick={triggerTop}
