@@ -1,7 +1,6 @@
 #include "web_routes.h"
 #include "time_astro.h"
 
-static const char *TAG = "WEB_API";
 static staircase_settings_t *cfg = NULL;
 
 void web_api_set_settings(staircase_settings_t *settings)
