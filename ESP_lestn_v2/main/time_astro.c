@@ -108,9 +108,12 @@ void time_astro_calculate_sun(
     *set_m = (uint8_t)(set_total_m % 60);
 }
 
+static bool time_has_synced = false;
+
 /* SNTP Notification Callback */
 static void time_sync_notification_cb(struct timeval *tv)
 {
+    time_has_synced = true;
     ESP_LOGI(TAG, "NTP Time synchronized successfully!");
 }
 
@@ -123,6 +126,7 @@ void time_astro_start_sntp(void)
              cfg ? cfg->timezone_offset : 3);
 
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
     const char *server0 = (cfg && cfg->ntp_server[0] != '\0') ? cfg->ntp_server : "pool.ntp.org";
     esp_sntp_setservername(0, server0);
     /* Резервные серверы времени для гарантированной синхронизации */
@@ -258,16 +262,57 @@ bool time_astro_is_night_now(void)
     }
 }
 
-/* Background Astro Monitoring Task */
+/* Background Astro & Intelligent NTP Resync Task */
 static void astro_monitor_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Astro & Schedule monitor task started");
+    int64_t last_sync_attempt_sec = 0;
 
     while (1)
     {
-        vTaskDelay(pdMS_TO_TICKS(15000)); /* Check every 15 seconds */
+        vTaskDelay(pdMS_TO_TICKS(5000)); /* Проверка каждые 5 секунд */
 
         if (cfg == NULL) continue;
+
+        time_t now = 0;
+        time(&now);
+        struct tm ti;
+        localtime_r(&now, &ti);
+        bool is_synced = (ti.tm_year >= (2024 - 1900));
+
+        int64_t now_sec = esp_timer_get_time() / 1000000;
+
+        if (cfg->ntp_enabled)
+        {
+            if (!is_synced)
+            {
+                /* НЕ СИНХРОНИЗИРОВАНО: настойчивый повтор каждые 10 секунд */
+                if ((now_sec - last_sync_attempt_sec) >= 10)
+                {
+                    last_sync_attempt_sec = now_sec;
+                    ESP_LOGW(TAG, "NTP not yet synced. Retrying immediate sync...");
+                    if (sntp_running) {
+                        esp_sntp_stop();
+                        sntp_running = false;
+                    }
+                    time_astro_start_sntp();
+                }
+            }
+            else
+            {
+                /* СИНХРОНИЗИРОВАНО: плановая синхронизация ровно 1 раз в час (3600 сек) */
+                if ((now_sec - last_sync_attempt_sec) >= 3600)
+                {
+                    last_sync_attempt_sec = now_sec;
+                    ESP_LOGI(TAG, "Hourly scheduled NTP time re-synchronization triggered.");
+                    if (sntp_running) {
+                        esp_sntp_stop();
+                        sntp_running = false;
+                    }
+                    time_astro_start_sntp();
+                }
+            }
+        }
 
         bool is_night = time_astro_is_night_now();
 
