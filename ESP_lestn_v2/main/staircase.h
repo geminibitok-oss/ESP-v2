@@ -33,6 +33,8 @@ void staircase_toggle_manual(void);
 void staircase_reset_sensors(void);
 void staircase_set_party_mode(bool enable);
 bool staircase_is_party_mode(void);
+void staircase_set_party_effect(uint8_t eff);
+uint8_t staircase_get_party_effect(void);
 
 staircase_state_t staircase_get_state(void);
 const char* staircase_get_state_str(void);

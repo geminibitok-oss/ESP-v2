@@ -41,6 +41,7 @@ esp_err_t api_state_handler(httpd_req_t *req)
         "\"steps\":[",
         staircase_get_state_str_ru(),
         staircase_is_party_mode() ? "true" : "false",
+        (unsigned int)staircase_get_party_effect(),
         (unsigned int)staircase_get_hold_remaining_ms(),
         sensor_bottom_active() ? "true" : "false",
         sensor_top_active() ? "true" : "false",
@@ -83,6 +84,11 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
             } else if (strcmp(dir, "top") == 0) {
                 staircase_force_trigger_top();
             } else if (strcmp(dir, "party_on") == 0) {
+                char eff_str[16] = {0};
+                if (httpd_query_key_value(query, "eff", eff_str, sizeof(eff_str)) == ESP_OK) {
+                    uint8_t eff_id = (uint8_t)atoi(eff_str);
+                    staircase_set_party_effect(eff_id);
+                }
                 staircase_set_party_mode(true);
             } else if (strcmp(dir, "party_off") == 0) {
                 staircase_set_party_mode(false);

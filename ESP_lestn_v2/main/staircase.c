@@ -39,6 +39,7 @@ static TaskHandle_t stair_task_handle = NULL;
 static int64_t hold_start_time_us = 0;
 static uint32_t hold_duration_ms = 4000;
 static bool entered_from_bottom = true;
+static uint8_t party_effect_choice = 0;
 
 const char* staircase_get_state_str(void)
 {
@@ -145,9 +146,19 @@ void staircase_force_trigger_top(void)
     send_cmd(CMD_TRIGGER_TOP);
 }
 
+void staircase_set_party_effect(uint8_t eff)
+{
+    party_effect_choice = eff;
+}
+
+uint8_t staircase_get_party_effect(void)
+{
+    return party_effect_choice;
+}
+
 void staircase_set_party_mode(bool enable)
 {
-    ESP_LOGI(TAG, "Setting party mode: %d", enable);
+    ESP_LOGI(TAG, "Setting party mode: %d (effect: %u)", enable, party_effect_choice);
     if (enable) {
         /* Очищаем очередь, чтобы мгновенно перехватить FSM */
         stair_cmd_t dummy;
@@ -253,47 +264,62 @@ static void staircase_fsm_task(void *pvParameters)
         /* PARTY MODE State: бесконечная циклическая анимация выбранного эффекта пока не отключат */
         else if (current_state == STAIR_STATE_PARTY_MODE)
         {
-            (void)cfg->anim_effect;
+            static uint32_t party_frame = 0;
+            party_frame++;
             uint16_t total = cfg->steps;
-            uint16_t del = cfg->step_on_time_ms < 30 ? 30 : cfg->step_on_time_ms;
+            uint8_t br = cfg->brightness;
 
-            /* Бегущая волна выбранного эффекта снизу вверх, затем мягкая смена */
-            for (uint16_t s = 0; s < total; s++)
+            if (party_effect_choice == 0)
             {
-                staircase_led_set_step_scaled(s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
-                if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(del)) == pdTRUE) {
-                    if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF || cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) {
-                        current_state = STAIR_STATE_IDLE;
-                        staircase_led_clear();
-                        break;
-                    }
-                }
+                /* 0: Радужный перелив (Smooth Rainbow) */
+                uint16_t hue_offset = (party_frame * 3) % 360;
+                staircase_led_render_rainbow_frame(hue_offset, br);
             }
-
-            if (current_state == STAIR_STATE_PARTY_MODE) {
-                /* Удержание эффекта 1.5 секунды */
-                for (int i = 0; i < 30; i++) {
-                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
-                        if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
-                            current_state = STAIR_STATE_IDLE;
-                            staircase_led_clear();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (current_state == STAIR_STATE_PARTY_MODE) {
-                /* Плавное мягкое затухание для следующего цикла праздника */
+            else if (party_effect_choice == 1)
+            {
+                /* 1: Северное сияние (Aurora) */
                 for (uint16_t s = 0; s < total; s++) {
-                    staircase_led_set_step_scaled(s, 0, 0, 0, 0);
-                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(del / 2)) == pdTRUE) {
-                        if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF) {
-                            current_state = STAIR_STATE_IDLE;
-                            staircase_led_clear();
-                            break;
-                        }
-                    }
+                    uint16_t hue = (130 + ((s * 15 + party_frame * 3) % 110)) % 360;
+                    uint8_t r, g, b;
+                    staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
+                    staircase_led_set_step_scaled(s, r, g, b, br);
+                }
+            }
+            else if (party_effect_choice == 2)
+            {
+                /* 2: Огонь / Живая Лава (Fire Flame) */
+                staircase_led_render_fire_frame(br, party_frame);
+            }
+            else if (party_effect_choice == 3)
+            {
+                /* 3: Неоновый импульс (Cyber Pulse) */
+                for (uint16_t s = 0; s < total; s++) {
+                    uint16_t phase = (party_frame * 6 + s * 25) % 360;
+                    uint8_t pulse_br = (uint8_t)(br * (40 + 60 * sinf(phase * 3.14159f / 180.0f)) / 100);
+                    staircase_led_set_step_scaled(s, cfg->color_r, cfg->color_g, cfg->color_b, pulse_br);
+                }
+            }
+            else if (party_effect_choice == 4)
+            {
+                /* 4: Мерцание звезд / Шиммер */
+                staircase_led_render_shimmer_frame(cfg->color_r, cfg->color_g, cfg->color_b, br, party_frame);
+            }
+            else
+            {
+                /* 5: Волна выбранного цвета */
+                uint16_t head = (party_frame / 2) % (total + 4);
+                for (uint16_t s = 0; s < total; s++) {
+                    int dist = abs((int)s - (int)head);
+                    uint8_t step_br = (dist < 4) ? (uint8_t)(br * (4 - dist) / 4) : 10;
+                    staircase_led_set_step_scaled(s, cfg->color_r, cfg->color_g, cfg->color_b, step_br);
+                }
+            }
+
+            /* Пауза между кадрами (30 мс ~= 33 FPS) и опрос прерывания */
+            if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(30)) == pdTRUE) {
+                if (cmd.type == CMD_PARTY_OFF || cmd.type == CMD_MANUAL_OFF || cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) {
+                    current_state = STAIR_STATE_IDLE;
+                    staircase_led_clear();
                 }
             }
         }

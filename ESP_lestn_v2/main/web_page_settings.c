@@ -13,6 +13,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     if (!cfg) return ESP_FAIL;
 
     web_send_html_header(req, "Настройки");
+
     /* Проверяем параметр saved=1 в URL для отображения уведомления */
     char query[32] = {0};
     bool show_saved_banner = false;
@@ -30,7 +31,6 @@ esp_err_t settings_get_handler(httpd_req_t *req)
             "</div>"
         );
     }
-
 
     httpd_resp_sendstr_chunk(req,
         "<form method='POST' action='/settings'>"
@@ -125,7 +125,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "</div></div></details>"
     );
 
-    /* СЕКЦИЯ 3: Световые эффекты и тайминги (в секундах для удобства) */
+    /* СЕКЦИЯ 3: Световые эффекты и тайминги */
     httpd_resp_sendstr_chunk(req,
         "<details class='st-sec'><summary>✨ 3. Световые эффекты и тайминги</summary><div class='sec-body'>"
         "<div class='grid'>"
@@ -138,7 +138,6 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='step_off' value='%u' min='20' max='2000' placeholder='150'></div>", (unsigned int)cfg->step_off_time_ms);
     httpd_resp_sendstr_chunk(req, buf);
 
-    /* Время удержания задается в СЕКУНДАХ */
     float hold_sec = (float)cfg->hold_time_ms / 1000.0f;
     if (hold_sec < 1.0f) hold_sec = 4.0f;
     httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>⏱ Время удержания света (СЕКУНДЫ)</label>");
@@ -464,6 +463,16 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "        else { list[i].removeAttribute('open'); }"
         "    }"
         "}"
+        "function confirmAndSave(btn){"
+        "    if (confirm('Вы уверены, что хотите сохранить настройки в энергонезависимую память Flash (NVS)?')) {"
+        "        var form = document.querySelector('form');"
+        "        if (form) {"
+        "            btn.disabled = true;"
+        "            btn.innerText = '⏳ Сохранение в Flash...';"
+        "            form.submit();"
+        "        }"
+        "    }"
+        "}"
         "function syncColorFromPicker(){"
         "    var h=document.getElementById('color_picker_main').value;"
         "    document.getElementById('cr_in').value=parseInt(h.substr(1,2),16);"
@@ -504,17 +513,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "    document.getElementById('st_sr04_fields').style.display = (stT === '1') ? 'grid' : 'none';"
         "    document.getElementById('st_pir_fields').style.display = (stT === '0') ? 'grid' : 'none';"
         "}"
-        "function confirmAndSave(btn){
-    if (confirm("Вы уверены, что хотите сохранить настройки в энергонезависимую память Flash (NVS)?")) {
-        var form = document.querySelector('form');
-        if (form) {
-            btn.disabled = true;
-            btn.innerText = "⏳ Сохранение в Flash...";
-            form.submit();
-        }
-    }
-}
-function pollLiveDistances(){"
+        "function pollLiveDistances(){"
         "    var xhr = new XMLHttpRequest();"
         "    xhr.open('GET', '/api/state', true);"
         "    xhr.onload = function(){"
@@ -534,6 +533,12 @@ function pollLiveDistances(){"
         "}"
         "setInterval(pollLiveDistances, 800);"
         "setTimeout(updateSensorFormVisibility, 50);"
+        "if(window.location.search.indexOf('saved=1') !== -1){"
+        "    setTimeout(function(){"
+        "        var t = document.getElementById('save-toast');"
+        "        if(t) { t.style.transition = 'opacity 0.6s'; t.style.opacity = '0'; setTimeout(function(){ t.style.display = 'none'; }, 600); }"
+        "    }, 3500);"
+        "}"
         "</script>"
     );
 
@@ -569,7 +574,8 @@ esp_err_t settings_post_handler(httpd_req_t *req)
 
     cfg->step_on_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_on", cfg->step_on_time_ms);
     cfg->step_off_time_ms = (uint16_t)web_get_post_param_int(post_buf, "step_off", cfg->step_off_time_ms);
-        char hold_sec_str[32] = {0};
+
+    char hold_sec_str[32] = {0};
     if (web_get_post_param(post_buf, "hold_sec", hold_sec_str, sizeof(hold_sec_str))) {
         float sec = (float)atof(hold_sec_str);
         if (sec >= 1.0f && sec <= 600.0f) {
