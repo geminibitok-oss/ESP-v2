@@ -55,18 +55,40 @@ esp_err_t index_handler(httpd_req_t *req)
         "</div>"
     );
 
-    /* КНОПКИ УПРАВЛЕНИЯ (БЕЗ КНОПКИ СБРОСА ДАТЧИКОВ) */
+    /* ЗАМЕНА СТАРЫХ КНОПОК НА ЕДИНУЮ КНОПКУ РЕЖИМА ДАТЧИКОВ + ПРАЗДНИК */
     httpd_resp_sendstr_chunk(req,
-        "<div class='grid'>"
-        "<button class='btn btn-success' onclick=\"fetch('/api/trigger?dir=bottom').then(updateState)\">🚶 Пройти снизу (Тест)</button>"
-        "<button class='btn btn-success' onclick=\"fetch('/api/trigger?dir=top').then(updateState)\">🚶 Пройти сверху (Тест)</button>"
-        "<button class='btn' onclick=\"fetch('/api/trigger?dir=all_on').then(updateState)\">💡 Включить всё</button>"
-        "<button class='btn btn-danger' onclick=\"fetch('/api/trigger?dir=all_off').then(updateState)\">🌑 Выключить всё</button>"
+        "<div style='display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0'>"
+        "<button id='sensor-mode-btn' class='btn' style='background:#0284c7;padding:14px;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px' onclick='openSensorModal()'>"
+        "⚙️ Режим работы датчиков: <strong id='cur-smode-txt'>И днём, и ночью (24/7)</strong>"
+        "</button>"
+        "<button id='party-btn' class='btn' style='width:100%;padding:14px;font-size:15px;background:#a855f7' onclick='handlePartyClick()'>"
+        "🎉 Режим «Праздник» (Бесконечный эффект)"
+        "</button>"
         "</div>"
-        "<div style='margin-top:10px'>"
-        "<button id='party-btn' class='btn' style='width:100%;padding:12px;font-size:15px;background:#a855f7' onclick=\"handlePartyClick()\">🎉 Режим «Праздник» (Бесконечный эффект)</button>"
         "</div>"
+    );
+
+    /* ВСПЛЫВАЮЩЕЕ ОКНО (МОДАЛКА) ВЫБОРА РАБОТЫ ДАТЧИКОВ (ДЕНЬ / НОЧЬ) */
+    httpd_resp_sendstr_chunk(req,
+        "<div id='sensor-modal' style='display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:16px'>"
+        "<div style='background:#1e293b;border:1px solid #0284c7;border-radius:12px;max-width:440px;width:100%;padding:20px;box-shadow:0 12px 36px rgba(0,0,0,0.8)'>"
+        "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>"
+        "<h3 style='margin:0;font-size:18px;color:#f8fafc'>⚙️ Работа ленты от датчиков</h3>"
+        "<button type='button' style='background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer' onclick='closeSensorModal()'>✕</button>"
         "</div>"
+        "<p style='font-size:13px;color:#cbd5e1;margin-bottom:14px'>Выберите, в какое время суток лестница должна зажигаться при приближении человека:</p>"
+        "<div style='display:grid;gap:10px;margin-bottom:18px'>"
+        "<button class='btn' style='background:#16a34a;text-align:left;padding:12px 16px;line-height:1.4' onclick='setSensorWorkMode(0)'>"
+        "☀️🌙 <strong>1. И днём, и ночью (Круглосуточно)</strong><br><small style='color:#bbf7d0'>Лестница зажигается всегда при срабатывании датчиков</small>"
+        "</button>"
+        "<button class='btn' style='background:#3b82f6;text-align:left;padding:12px 16px;line-height:1.4' onclick='setSensorWorkMode(1)'>"
+        "🌙 <strong>2. Только ночью (В тёмное время суток)</strong><br><small style='color:#bfdbfe'>Днём датчики заблокированы, свет включается строго от заката до восхода</small>"
+        "</button>"
+        "</div>"
+        "<div style='text-align:right'>"
+        "<button type='button' class='btn btn-sm' style='background:#475569' onclick='closeSensorModal()'>Отмена</button>"
+        "</div>"
+        "</div></div>"
     );
 
     /* ВСПЛЫВАЮЩЕЕ ОКНО (МОДАЛКА) ВЫБОРА РЕЖИМА ПРАЗДНИКА */
@@ -133,6 +155,16 @@ esp_err_t index_handler(httpd_req_t *req)
         "  closePartyModal();"
         "  fetch('/api/trigger?dir=party_on&eff=' + effId).then(updateState);"
         "}"
+        "function openSensorModal(){"
+        "  document.getElementById('sensor-modal').style.display = 'flex';"
+        "}"
+        "function closeSensorModal(){"
+        "  document.getElementById('sensor-modal').style.display = 'none';"
+        "}"
+        "function setSensorWorkMode(m){"
+        "  closeSensorModal();"
+        "  fetch('/api/trigger?dir=set_sensor_mode&mode=' + m).then(updateState);"
+        "}"
         "function updateState(){"
         "  fetch('/api/state').then(function(r){return r.json();}).then(function(d){"
         "    document.getElementById('stair-state').innerText = d.state;"
@@ -141,6 +173,10 @@ esp_err_t index_handler(httpd_req_t *req)
         "      isPartyActive = d.is_party;"
         "      pBtn.innerText = d.is_party ? '🛑 Отключить режим «Праздник»' : '🎉 Режим «Праздник» (Бесконечный эффект)';"
         "      pBtn.style.background = d.is_party ? '#dc2626' : '#a855f7';"
+        "    }"
+        "    var smTxt = document.getElementById('cur-smode-txt');"
+        "    if(smTxt && d.sensor_work_mode !== undefined){"
+        "      smTxt.innerText = (d.sensor_work_mode === 1) ? 'Только ночью' : 'И днём, и ночью';"
         "    }"
         "    document.getElementById('hold-time').innerText = (d.hold_ms > 0 ? (d.hold_ms / 1000).toFixed(1) + ' сек' : '0.0 сек');"
         "    if(d.current_time){ document.getElementById('clock-time').innerText = d.current_time + (d.time_synced ? ' (NTP)' : ' (RTC)'); }"

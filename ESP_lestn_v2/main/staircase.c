@@ -181,6 +181,11 @@ bool staircase_is_party_mode(void)
 
 void staircase_on_sensor_event(sensor_event_type_t event)
 {
+    if (cfg != NULL && cfg->sensor_work_mode == 1 && !cfg->night_mode) {
+        /* Режим: 'Только ночью' активен, а сейчас ДЕНЬ -> блокируем автоматическое включение от датчиков */
+        return;
+    }
+
     if (event == SENSOR_EVENT_BOTTOM_TRIGGERED) {
         staircase_trigger_bottom();
     } else if (event == SENSOR_EVENT_TOP_TRIGGERED) {
@@ -340,7 +345,7 @@ static void staircase_fsm_task(void *pvParameters)
             }
         }
 
-        /* TURNING ON BOTH (Встречное движение: два человека идут навстречу друг другу) */
+        /* TURNING ON BOTH (Защита при срабатывании 2 датчиков: встречная волна выбранным цветом и эффектом) */
         else if (current_state == STAIR_STATE_TURNING_ON_BOTH)
         {
             uint16_t total_steps = cfg->steps;
@@ -348,21 +353,20 @@ static void staircase_fsm_task(void *pvParameters)
             uint16_t delay_ms = cfg->step_on_time_ms;
             if (delay_ms < 30) delay_ms = 30;
 
-            ESP_LOGI(TAG, "Встречное движение! Анимация встречных волн с обоих концов лестницы.");
+            ESP_LOGI(TAG, "Сработали 2 датчика! Встречная волна выбранным цветом (R=%u G=%u B=%u), без белой вспышки",
+                     cfg->color_r, cfg->color_g, cfg->color_b);
 
-            /* Две световые волны навстречу друг другу */
+            /* Встречное плавное включение с обоих концов выбранным пользователем цветом */
             for (uint16_t i = 0; i < half; i++)
             {
                 uint16_t s_bottom = i;
                 uint16_t s_top = (total_steps - 1) - i;
 
-                /* Волна снизу (основной цвет) */
                 staircase_led_set_step_scaled(s_bottom, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
-                /* Встречная волна сверху (акцентный мягкий оттенок или основной цвет) */
                 staircase_led_set_step_scaled(s_top, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
 
                 if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                    if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                    if (cmd.type == CMD_MANUAL_OFF) {
                         staircase_led_clear();
                         current_state = STAIR_STATE_IDLE;
                         break;
@@ -372,11 +376,10 @@ static void staircase_fsm_task(void *pvParameters)
 
             if (current_state == STAIR_STATE_TURNING_ON_BOTH)
             {
-                /* Все ступени зажглись навстречу, переходим в удержание */
+                /* Фиксация выбранного цвета на ступенях */
                 staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                 current_state = STAIR_STATE_HOLDING;
                 hold_start_time_us = esp_timer_get_time();
-                /* Удваиваем время удержания, чтобы оба человека успели разойтись */
                 hold_duration_ms = cfg->hold_time_ms + 2000;
             }
         }
@@ -641,7 +644,7 @@ static void staircase_fsm_task(void *pvParameters)
                 for (int s = total_steps - 1; s >= 0; s--)
                 {
                     if (s < total_steps - 1) staircase_led_set_step_scaled((uint16_t)(s + 1), cfg->color_r, cfg->color_g, cfg->color_b, (uint8_t)(cfg->brightness * 0.5f));
-                    staircase_led_set_step_scaled((uint16_t)s, 255, 255, 255, 100);
+                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_d)) == pdTRUE) {
                         if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
@@ -703,7 +706,7 @@ static void staircase_fsm_task(void *pvParameters)
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
                         if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
-                    staircase_led_set_step_scaled((uint16_t)s, 255, 255, 255, 100);
+                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
                         if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }

@@ -94,6 +94,13 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
                 staircase_set_party_mode(true);
             } else if (strcmp(dir, "party_off") == 0) {
                 staircase_set_party_mode(false);
+            } else if (strcmp(dir, "set_sensor_mode") == 0) {
+                char mode_str[16] = {0};
+                if (httpd_query_key_value(query, "mode", mode_str, sizeof(mode_str)) == ESP_OK) {
+                    cfg->sensor_work_mode = (uint8_t)atoi(mode_str);
+                    settings_save(cfg);
+                    staircase_apply_settings(cfg);
+                }
             } else if (strcmp(dir, "all_on") == 0) {
                 staircase_set_manual_on();
             } else if (strcmp(dir, "all_off") == 0) {

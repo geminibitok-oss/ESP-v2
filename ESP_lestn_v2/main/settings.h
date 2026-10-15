@@ -127,6 +127,7 @@ typedef struct
 
     /* Schedule / Automation Mode */
     uint8_t schedule_mode;      /* 0: Астро (Закат/Восход), 1: По времени, 2: Всегда Вкл, 3: Выкл */
+    uint8_t sensor_work_mode;   /* 0: И днем и ночью (24/7), 1: Только ночью (в темное время) */
     int16_t sunset_offset_min;  /* Смещение времени включения от заката (мин, +/-) */
     int16_t sunrise_offset_min; /* Смещение времени выключения от восхода (мин, +/-) */
 

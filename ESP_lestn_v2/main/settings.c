@@ -90,6 +90,7 @@ void settings_reset(staircase_settings_t *s)
     s->longitude = 37.6173f;        /* Moscow Lon */
 
     s->schedule_mode = 0;           /* 0: Astronomical sunset/sunrise */
+    s->sensor_work_mode = 0;        /* 0: И днем и ночью, 1: Только ночью */
     s->sunset_offset_min = 0;       /* Exactly at sunset */
     s->sunrise_offset_min = 0;      /* Exactly at sunrise */
 
@@ -121,6 +122,7 @@ static void settings_sanitize(staircase_settings_t *s)
     if (s->latitude < -90.0f || s->latitude > 90.0f) s->latitude = 55.7558f;
     if (s->longitude < -180.0f || s->longitude > 180.0f) s->longitude = 37.6173f;
     if (s->schedule_mode > 3) s->schedule_mode = 0;
+    if (s->sensor_work_mode > 1) s->sensor_work_mode = 0;
     if (s->sunset_offset_min < -300 || s->sunset_offset_min > 300) s->sunset_offset_min = 0;
     if (s->sunrise_offset_min < -300 || s->sunrise_offset_min > 300) s->sunrise_offset_min = 0;
     if (s->fixed_on_hour > 23) s->fixed_on_hour = 22;
