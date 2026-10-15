@@ -19,8 +19,10 @@ esp_err_t api_state_handler(httpd_req_t *req)
 
     char json[2048];
     int offset = snprintf(json, sizeof(json),
-        "{\"state\":\"%s\","
+        "{"
+        "\"state\":\"%s\","
         "\"is_party\":%s,"
+        "\"party_eff\":%u,"
         "\"hold_ms\":%u,"
         "\"bottom_sensor\":%s,"
         "\"top_sensor\":%s,"
@@ -39,26 +41,26 @@ esp_err_t api_state_handler(httpd_req_t *req)
         "\"schedule_mode\":%u,"
         "\"next_switch\":\"%s\","
         "\"steps\":[",
-        staircase_get_state_str_ru(),
-        staircase_is_party_mode() ? "true" : "false",
-        (unsigned int)staircase_get_party_effect(),
-        (unsigned int)staircase_get_hold_remaining_ms(),
-        sensor_bottom_active() ? "true" : "false",
-        sensor_top_active() ? "true" : "false",
-        (unsigned int)cfg->sensor_bottom_type,
-        (unsigned int)cfg->sensor_top_type,
-        (unsigned int)sensor_bottom_distance_cm(),
-        (unsigned int)sensor_top_distance_cm(),
-        (unsigned int)cfg->sensor_bottom_threshold_cm,
-        (unsigned int)cfg->sensor_top_threshold_cm,
-        (unsigned long)esp_get_free_heap_size(),
-        t_stat.synced ? "true" : "false",
-        t_stat.time_str,
-        t_stat.sunrise_str,
-        t_stat.sunset_str,
-        t_stat.is_night_time ? "true" : "false",
-        (unsigned int)cfg->schedule_mode,
-        t_stat.next_switch_str
+        staircase_get_state_str_ru(),                      /* %s: state */
+        staircase_is_party_mode() ? "true" : "false",      /* %s: is_party */
+        (unsigned int)staircase_get_party_effect(),        /* %u: party_eff */
+        (unsigned int)staircase_get_hold_remaining_ms(),   /* %u: hold_ms */
+        sensor_bottom_active() ? "true" : "false",         /* %s: bottom_sensor */
+        sensor_top_active() ? "true" : "false",            /* %s: top_sensor */
+        (unsigned int)cfg->sensor_bottom_type,             /* %u: sensor_bottom_type */
+        (unsigned int)cfg->sensor_top_type,                /* %u: sensor_top_type */
+        (unsigned int)sensor_bottom_distance_cm(),         /* %u: bottom_dist */
+        (unsigned int)sensor_top_distance_cm(),            /* %u: top_dist */
+        (unsigned int)cfg->sensor_bottom_threshold_cm,     /* %u: bottom_threshold */
+        (unsigned int)cfg->sensor_top_threshold_cm,        /* %u: top_threshold */
+        (unsigned long)esp_get_free_heap_size(),           /* %lu: heap */
+        t_stat.synced ? "true" : "false",                  /* %s: time_synced */
+        t_stat.time_str,                                   /* %s: current_time */
+        t_stat.sunrise_str,                                /* %s: sunrise */
+        t_stat.sunset_str,                                 /* %s: sunset */
+        t_stat.is_night_time ? "true" : "false",           /* %s: is_night */
+        (unsigned int)cfg->schedule_mode,                  /* %u: schedule_mode */
+        t_stat.next_switch_str                             /* %s: next_switch */
     );
 
     for (uint16_t s = 0; s < cfg->steps && offset < (int)sizeof(json) - 16; s++) {
