@@ -242,13 +242,23 @@ static void staircase_fsm_task(void *pvParameters)
             {
                 if (cmd.type == CMD_TRIGGER_BOTTOM)
                 {
-                    current_state = STAIR_STATE_TURNING_ON_UP;
-                    entered_from_bottom = true;
+                    /* Проверяем: если в этот же момент сработал и верхний датчик -> включаем встречную волну выбранным эффектом! */
+                    if (sensor_top_active()) {
+                        current_state = STAIR_STATE_TURNING_ON_BOTH;
+                    } else {
+                        current_state = STAIR_STATE_TURNING_ON_UP;
+                        entered_from_bottom = true;
+                    }
                 }
                 else if (cmd.type == CMD_TRIGGER_TOP)
                 {
-                    current_state = STAIR_STATE_TURNING_ON_DOWN;
-                    entered_from_bottom = false;
+                    /* Проверяем: если в этот же момент сработал и нижний датчик -> включаем встречную волну выбранным эффектом! */
+                    if (sensor_bottom_active()) {
+                        current_state = STAIR_STATE_TURNING_ON_BOTH;
+                    } else {
+                        current_state = STAIR_STATE_TURNING_ON_DOWN;
+                        entered_from_bottom = false;
+                    }
                 }
                 else if (cmd.type == CMD_PARTY_ON)
                 {
@@ -409,7 +419,7 @@ static void staircase_fsm_task(void *pvParameters)
                     }
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(c_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -428,7 +438,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_render_meteor_step(step, (int16_t)step, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -437,7 +447,7 @@ static void staircase_fsm_task(void *pvParameters)
 
                     staircase_led_set_step_scaled(step, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -456,7 +466,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled(step, r, g, b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -476,7 +486,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled(step, r, g, b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -502,7 +512,7 @@ static void staircase_fsm_task(void *pvParameters)
                     for (int l = 0; l < 4; l++) {
                         staircase_led_set_step_scaled(step, cfg->color_r, cfg->color_g, cfg->color_b, br_levels[l]);
                         if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_step_delay)) == pdTRUE) {
-                            if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                            if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                                 staircase_led_clear();
                                 current_state = STAIR_STATE_IDLE;
                                 break;
@@ -520,7 +530,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled(step, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -563,7 +573,7 @@ static void staircase_fsm_task(void *pvParameters)
                     }
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(c_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -582,7 +592,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_render_meteor_step(total_steps - 1 - s, (int16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -591,7 +601,7 @@ static void staircase_fsm_task(void *pvParameters)
 
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_delay)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -610,7 +620,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled((uint16_t)s, r, g, b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -629,7 +639,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled((uint16_t)s, r, g, b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -646,7 +656,7 @@ static void staircase_fsm_task(void *pvParameters)
                     if (s < total_steps - 1) staircase_led_set_step_scaled((uint16_t)(s + 1), cfg->color_r, cfg->color_g, cfg->color_b, (uint8_t)(cfg->brightness * 0.5f));
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_d)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                 }
@@ -663,7 +673,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled(s1, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     staircase_led_set_step_scaled(s2, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(c_d)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                 }
             }
@@ -677,7 +687,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
                     staircase_led_set_step_scaled((uint16_t)s, r, g, b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                 }
             }
@@ -690,7 +700,7 @@ static void staircase_fsm_task(void *pvParameters)
                     uint16_t target_s = (total_steps - 1) - ((step * 7 + 3) % total_steps);
                     staircase_led_set_step_scaled(target_s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(s_d)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                 }
                 staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
@@ -704,11 +714,11 @@ static void staircase_fsm_task(void *pvParameters)
                 {
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, (uint8_t)(cfg->brightness * 0.4f));
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_p)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
                     }
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
                 }
@@ -731,7 +741,7 @@ static void staircase_fsm_task(void *pvParameters)
                     for (int l = 0; l < 4; l++) {
                         staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, br_levels[l]);
                         if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(sub_step_delay)) == pdTRUE) {
-                            if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                            if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                                 staircase_led_clear();
                                 current_state = STAIR_STATE_IDLE;
                                 break;
@@ -749,7 +759,7 @@ static void staircase_fsm_task(void *pvParameters)
                     staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
 
                     if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -889,7 +899,7 @@ static void staircase_fsm_task(void *pvParameters)
                             hold_start_time_us = esp_timer_get_time();
                             hold_duration_ms = cfg->hold_time_ms;
                             break;
-                        } else if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        } else if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;
@@ -958,7 +968,7 @@ static void staircase_fsm_task(void *pvParameters)
                             hold_start_time_us = esp_timer_get_time();
                             hold_duration_ms = cfg->hold_time_ms;
                             break;
-                        } else if (cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                        } else if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
                             staircase_led_clear();
                             current_state = STAIR_STATE_IDLE;
                             break;

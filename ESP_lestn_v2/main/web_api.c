@@ -59,6 +59,7 @@ esp_err_t api_state_handler(httpd_req_t *req)
         t_stat.sunrise_str,                                /* %s: sunrise */
         t_stat.sunset_str,                                 /* %s: sunset */
         t_stat.is_night_time ? "true" : "false",           /* %s: is_night */
+        (unsigned int)cfg->sensor_work_mode,               /* %u: sensor_work_mode */
         (unsigned int)cfg->schedule_mode,                  /* %u: schedule_mode */
         t_stat.next_switch_str                             /* %s: next_switch */
     );
