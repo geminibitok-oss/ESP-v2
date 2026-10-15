@@ -6765,6 +6765,8 @@ esp_err_t web_send_html_footer(httpd_req_t *req);
     category: 'web',
     description: 'Реализация общих утилит HTTP-сервера и HTML-лейаута.',
     code: `#include "web_common.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
 
 static const char *TAG = "WEB_COMMON";
 
@@ -6907,14 +6909,16 @@ esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
         "</style></head><body><div class='wrap'>"
     );
 
-    /* Надежное получение реальной версии прошивки */
-    const esp_app_desc_t *app_desc = esp_app_get_description();
-    const char *ver = (app_desc && app_desc->version[0] != '\0') ? app_desc->version : "5.0.0";
-    char ver_tag[32];
-    if (ver[0] == 'v' || ver[0] == 'V') {
-        snprintf(ver_tag, sizeof(ver_tag), "%s", ver);
-    } else {
-        snprintf(ver_tag, sizeof(ver_tag), "v%s", ver);
+    /* Надежное получение реальной версии установленной прошивки через OTA дескриптор */
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_app_desc_t app_info;
+    char ver_tag[32] = "v5.0.0";
+    if (esp_ota_get_partition_description(running, &app_info) == ESP_OK && app_info.version[0] != '\0') {
+        if (app_info.version[0] == 'v' || app_info.version[0] == 'V') {
+            snprintf(ver_tag, sizeof(ver_tag), "%s", app_info.version);
+        } else {
+            snprintf(ver_tag, sizeof(ver_tag), "v%s", app_info.version);
+        }
     }
 
     char h_buf[512];
