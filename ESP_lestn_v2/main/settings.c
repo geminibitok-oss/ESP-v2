@@ -68,11 +68,17 @@ void settings_reset(staircase_settings_t *s)
     s->night_first_step = true;
     s->night_last_step = true;
 
-    /* Sensor debounce & Ultrasonic */
+    /* Sensor debounce & Independent Sensors - Ultrasonic HC-SR04 DEFAULT */
     s->sensor_debounce_ms = 60;
-    s->sensor_type = 0;                     /* 0: PIR, 1: HC-SR04 */
-    s->sensor_bottom_echo_gpio = 18;
-    s->sensor_top_echo_gpio = 19;
+    s->sensor_type = 1;                     /* 1: HC-SR04 по умолчанию */
+    s->sensor_bottom_type = 1;              /* 1: HC-SR04 снизу по умолчанию */
+    s->sensor_top_type = 1;                 /* 1: HC-SR04 сверху по умолчанию */
+    s->sensor_bottom_threshold_cm = 80;     /* Порог срабатывания снизу 80 см */
+    s->sensor_top_threshold_cm = 80;        /* Порог срабатывания сверху 80 см */
+    s->sensor_bottom_active_high = true;
+    s->sensor_top_active_high = true;
+    s->sensor_bottom_echo_gpio = 19;        /* Пин ECHO снизу */
+    s->sensor_top_echo_gpio = 18;           /* Пин ECHO сверху */
     s->ultrasonic_trigger_distance_cm = 80; /* Порог срабатывания по умолчанию 80 см */
     s->ultrasonic_max_distance_cm = 200;    /* Максимальная дальность 200 см */
 

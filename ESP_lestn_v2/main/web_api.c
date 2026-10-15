@@ -22,7 +22,7 @@ esp_err_t api_state_handler(httpd_req_t *req)
         "{\"state\":\"%s\",\"hold_ms\":%u,\"bottom_sensor\":%s,\"top_sensor\":%s,\"heap\":%lu,"
         "\"time_synced\":%s,\"current_time\":\"%s\",\"sunrise\":\"%s\",\"sunset\":\"%s\",\"is_night\":%s,"
         "\"schedule_mode\":%u,\"next_switch\":\"%s\",\"steps\":[",
-        staircase_get_state_str(),
+        staircase_get_state_str_ru(),
         staircase_is_party_mode() ? "true" : "false",
         (unsigned int)staircase_get_hold_remaining_ms(),
         sensor_bottom_active() ? "true" : "false",

@@ -44,6 +44,23 @@ const char* staircase_get_state_str(void)
 {
     switch (current_state)
     {
+        case STAIR_STATE_IDLE:             return "IDLE";
+        case STAIR_STATE_TURNING_ON_UP:    return "TURNING_ON_UP";
+        case STAIR_STATE_TURNING_ON_DOWN:  return "TURNING_ON_DOWN";
+        case STAIR_STATE_TURNING_ON_BOTH:  return "TURNING_ON_BOTH";
+        case STAIR_STATE_HOLDING:          return "HOLDING";
+        case STAIR_STATE_TURNING_OFF_UP:   return "TURNING_OFF_UP";
+        case STAIR_STATE_TURNING_OFF_DOWN: return "TURNING_OFF_DOWN";
+        case STAIR_STATE_MANUAL_ON:        return "MANUAL_ON";
+        case STAIR_STATE_PARTY_MODE:      return "PARTY_MODE";
+        default:                           return "UNKNOWN";
+    }
+}
+
+const char* staircase_get_state_str_ru(void)
+{
+    switch (current_state)
+    {
         case STAIR_STATE_IDLE:             return "ОЖИДАНИЕ";
         case STAIR_STATE_TURNING_ON_UP:    return "ВКЛЮЧЕНИЕ (СНИЗУ ВВЕРХ)";
         case STAIR_STATE_TURNING_ON_DOWN:  return "ВКЛЮЧЕНИЕ (СВЕРХУ ВНИЗ)";

@@ -16,7 +16,7 @@ esp_err_t index_handler(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, "<div class='card'><h2>Состояние лестницы</h2>");
 
     char buf[1024];
-    snprintf(buf, sizeof(buf), "<p>Статус FSM: <span id='stair-state' class='badge badge-blue'>%s</span></p>", staircase_get_state_str());
+    snprintf(buf, sizeof(buf), "<p>Статус FSM: <span id='stair-state' class='badge badge-blue'>%s</span></p>", staircase_get_state_str_ru());
     httpd_resp_sendstr_chunk(req, buf);
 
     httpd_resp_sendstr_chunk(req,

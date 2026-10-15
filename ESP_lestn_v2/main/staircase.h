@@ -36,6 +36,7 @@ bool staircase_is_party_mode(void);
 
 staircase_state_t staircase_get_state(void);
 const char* staircase_get_state_str(void);
+const char* staircase_get_state_str_ru(void);
 uint32_t staircase_get_hold_remaining_ms(void);
 
 void staircase_on_sensor_event(sensor_event_type_t event);
