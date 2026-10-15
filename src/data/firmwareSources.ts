@@ -6854,6 +6854,15 @@ int web_get_post_param_int(const char *buf, const char *key, int default_val)
     return default_val;
 }
 
+float web_get_post_param_float(const char *buf, const char *key, float default_val)
+{
+    char str[32];
+    if (web_get_post_param(buf, key, str, sizeof(str))) {
+        return (float)atof(str);
+    }
+    return default_val;
+}
+
 esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
 {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
@@ -6888,6 +6897,13 @@ esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
         ".badge-green{background:#064e3b;color:#34d399}.badge-red{background:#7f1d1d;color:#f87171}.badge-blue{background:#0c4a6e;color:#38bdf8}"
         ".step-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155}"
         ".step-row:last-child{border-bottom:none}"
+        "details{background:#1e293b;border-radius:10px;padding:12px 16px;margin-bottom:12px;border:1px solid #334155;transition:all 0.2s}"
+        "details[open]{border-color:#0284c7;background:#1e293b}"
+        "summary{font-size:16px;font-weight:600;color:#38bdf8;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none;outline:none}"
+        "summary::-webkit-details-marker{display:none}"
+        "summary::after{content:'▼';font-size:12px;color:#94a3b8;transition:transform 0.2s}"
+        "details[open] summary::after{transform:rotate(180deg);color:#38bdf8}"
+        ".sec-body{margin-top:14px;padding-top:12px;border-top:1px solid #334155}" 
         "</style></head><body><div class='wrap'>"
         "<h1>✨ Умная лестница ESP-Lestn v2</h1>"
         "<div class='nav'>"
@@ -6904,7 +6920,8 @@ esp_err_t web_send_html_footer(httpd_req_t *req)
 {
     httpd_resp_sendstr_chunk(req, "</div></body></html>");
     return httpd_resp_sendstr_chunk(req, NULL);
-}`
+}
+`
   },
   {
     name: 'web_routes.h',
