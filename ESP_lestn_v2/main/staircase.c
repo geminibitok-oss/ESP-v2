@@ -451,7 +451,37 @@ static void staircase_fsm_task(void *pvParameters)
             uint16_t delay_ms = cfg->step_on_time_ms;
             uint8_t effect = cfg->anim_effect;
 
-            if (effect == ANIM_EFFECT_CURTAIN)
+            /* ПРИОРИТЕТ: Если выбран режим 'По одному диоду' - зажигаем каждый светодиод последовательно */
+            if (cfg->step_fill_mode == 1 && cfg->pixels_per_step > 1)
+            {
+                uint16_t pps = cfg->pixels_per_step;
+                uint16_t px_delay_ms = delay_ms / pps;
+                if (px_delay_ms < 5) px_delay_ms = 5;
+
+                for (uint16_t step = 0; step < total_steps; step++)
+                {
+                    for (uint16_t p = 0; p < pps; p++)
+                    {
+                        if (effect == ANIM_EFFECT_RAINBOW) {
+                            uint16_t global_px = step * pps + p;
+                            uint16_t total_px = total_steps * pps;
+                            uint16_t hue = (global_px * 360 / (total_px > 0 ? total_px : 1)) % 360;
+                            uint8_t r, g, b;
+                            staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
+                            staircase_led_set_pixel_scaled(step, p, r, g, b, cfg->brightness);
+                        } else {
+                            staircase_led_set_pixel_scaled(step, p, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                        }
+
+                        if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(px_delay_ms)) == pdTRUE) {
+                            if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; }
+                            else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        }
+                    }
+                    if (current_state != STAIR_STATE_TURNING_ON_UP) break;
+                }
+            }
+            else if (effect == ANIM_EFFECT_CURTAIN)
             {
                 /* Curtain from center outwards */
                 int16_t mid = total_steps / 2;
@@ -632,7 +662,37 @@ static void staircase_fsm_task(void *pvParameters)
             uint16_t delay_ms = cfg->step_on_time_ms;
             uint8_t effect = cfg->anim_effect;
 
-            if (effect == ANIM_EFFECT_CURTAIN)
+            /* ПРИОРИТЕТ: Если выбран режим 'По одному диоду' - зажигаем каждый светодиод последовательно сверху вниз */
+            if (cfg->step_fill_mode == 1 && cfg->pixels_per_step > 1)
+            {
+                uint16_t pps = cfg->pixels_per_step;
+                uint16_t px_delay_ms = delay_ms / pps;
+                if (px_delay_ms < 5) px_delay_ms = 5;
+
+                for (int s = total_steps - 1; s >= 0; s--)
+                {
+                    for (uint16_t p = 0; p < pps; p++)
+                    {
+                        if (effect == ANIM_EFFECT_RAINBOW) {
+                            uint16_t global_px = (uint16_t)s * pps + p;
+                            uint16_t total_px = total_steps * pps;
+                            uint16_t hue = (global_px * 360 / (total_px > 0 ? total_px : 1)) % 360;
+                            uint8_t r, g, b;
+                            staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
+                            staircase_led_set_pixel_scaled((uint16_t)s, p, r, g, b, cfg->brightness);
+                        } else {
+                            staircase_led_set_pixel_scaled((uint16_t)s, p, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                        }
+
+                        if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(px_delay_ms)) == pdTRUE) {
+                            if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; }
+                            else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                        }
+                    }
+                    if (current_state != STAIR_STATE_TURNING_ON_DOWN) break;
+                }
+            }
+            else if (effect == ANIM_EFFECT_CURTAIN)
             {
                 /* Curtain from edges inwards */
                 uint16_t half_steps = (total_steps + 1) / 2;

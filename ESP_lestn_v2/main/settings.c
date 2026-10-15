@@ -115,7 +115,6 @@ static void settings_sanitize(staircase_settings_t *s)
     if (s->hold_effect > 7) s->hold_effect = HOLD_EFFECT_SOLID;
     if (s->off_effect > 4) s->off_effect = OFF_EFFECT_WAVE;
     if (s->step_fill_mode > 1) s->step_fill_mode = 0;
-    s->step_fill_mode = 0;        /* 0: Вся ступенька сразу по умолчанию */
     if (s->step_on_time_ms < 10 || s->step_on_time_ms > 5000) s->step_on_time_ms = 120;
     if (s->step_off_time_ms < 10 || s->step_off_time_ms > 5000) s->step_off_time_ms = 180;
     if (s->hold_time_ms > 300000 || s->hold_time_ms < 500) s->hold_time_ms = 5000;
