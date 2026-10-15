@@ -38,30 +38,31 @@ esp_err_t api_state_handler(httpd_req_t *req)
         "\"sunrise\":\"%s\","
         "\"sunset\":\"%s\","
         "\"is_night\":%s,"
+        "\"sensor_work_mode\":%u,"
         "\"schedule_mode\":%u,"
         "\"next_switch\":\"%s\","
         "\"steps\":[",
-        staircase_get_state_str_ru(),                      /* %s: state */
-        staircase_is_party_mode() ? "true" : "false",      /* %s: is_party */
-        (unsigned int)staircase_get_party_effect(),        /* %u: party_eff */
-        (unsigned int)staircase_get_hold_remaining_ms(),   /* %u: hold_ms */
-        sensor_bottom_active() ? "true" : "false",         /* %s: bottom_sensor */
-        sensor_top_active() ? "true" : "false",            /* %s: top_sensor */
-        (unsigned int)cfg->sensor_bottom_type,             /* %u: sensor_bottom_type */
-        (unsigned int)cfg->sensor_top_type,                /* %u: sensor_top_type */
-        (unsigned int)sensor_bottom_distance_cm(),         /* %u: bottom_dist */
-        (unsigned int)sensor_top_distance_cm(),            /* %u: top_dist */
-        (unsigned int)cfg->sensor_bottom_threshold_cm,     /* %u: bottom_threshold */
-        (unsigned int)cfg->sensor_top_threshold_cm,        /* %u: top_threshold */
-        (unsigned long)esp_get_free_heap_size(),           /* %lu: heap */
-        t_stat.synced ? "true" : "false",                  /* %s: time_synced */
-        t_stat.time_str,                                   /* %s: current_time */
-        t_stat.sunrise_str,                                /* %s: sunrise */
-        t_stat.sunset_str,                                 /* %s: sunset */
-        t_stat.is_night_time ? "true" : "false",           /* %s: is_night */
-        (unsigned int)cfg->sensor_work_mode,               /* %u: sensor_work_mode */
-        (unsigned int)cfg->schedule_mode,                  /* %u: schedule_mode */
-        t_stat.next_switch_str                             /* %s: next_switch */
+        staircase_get_state_str_ru(),                      /* 1: %s state */
+        staircase_is_party_mode() ? "true" : "false",      /* 2: %s is_party */
+        (unsigned int)staircase_get_party_effect(),        /* 3: %u party_eff */
+        (unsigned int)staircase_get_hold_remaining_ms(),   /* 4: %u hold_ms */
+        sensor_bottom_active() ? "true" : "false",         /* 5: %s bottom_sensor */
+        sensor_top_active() ? "true" : "false",            /* 6: %s top_sensor */
+        (unsigned int)cfg->sensor_bottom_type,             /* 7: %u sensor_bottom_type */
+        (unsigned int)cfg->sensor_top_type,                /* 8: %u sensor_top_type */
+        (unsigned int)sensor_bottom_distance_cm(),         /* 9: %u bottom_dist */
+        (unsigned int)sensor_top_distance_cm(),            /* 10: %u top_dist */
+        (unsigned int)cfg->sensor_bottom_threshold_cm,     /* 11: %u bottom_threshold */
+        (unsigned int)cfg->sensor_top_threshold_cm,        /* 12: %u top_threshold */
+        (unsigned long)esp_get_free_heap_size(),           /* 13: %lu heap */
+        t_stat.synced ? "true" : "false",                  /* 14: %s time_synced */
+        t_stat.time_str,                                   /* 15: %s current_time */
+        t_stat.sunrise_str,                                /* 16: %s sunrise */
+        t_stat.sunset_str,                                 /* 17: %s sunset */
+        t_stat.is_night_time ? "true" : "false",           /* 18: %s is_night */
+        (unsigned int)cfg->sensor_work_mode,               /* 19: %u sensor_work_mode */
+        (unsigned int)cfg->schedule_mode,                  /* 20: %u schedule_mode */
+        t_stat.next_switch_str                             /* 21: %s next_switch */
     );
 
     for (uint16_t s = 0; s < cfg->steps && offset < (int)sizeof(json) - 16; s++) {

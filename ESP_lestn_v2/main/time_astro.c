@@ -185,8 +185,22 @@ void time_astro_get_status(time_astro_status_t *out)
         );
 
         out->sun_valid = true;
-        snprintf(out->sunrise_str, sizeof(out->sunrise_str), "%02d:%02d", out->sunrise_hour, out->sunrise_min);
-        snprintf(out->sunset_str, sizeof(out->sunset_str), "%02d:%02d", out->sunset_hour, out->sunset_min);
+        /* Учитываем пользовательские смещения заката и восхода в минутах (+/-) */
+        int raw_sunrise_min = out->sunrise_hour * 60 + out->sunrise_min + cfg->sunrise_offset_min;
+        int raw_sunset_min = out->sunset_hour * 60 + out->sunset_min + cfg->sunset_offset_min;
+
+        while (raw_sunrise_min < 0) raw_sunrise_min += 1440;
+        while (raw_sunrise_min >= 1440) raw_sunrise_min -= 1440;
+        while (raw_sunset_min < 0) raw_sunset_min += 1440;
+        while (raw_sunset_min >= 1440) raw_sunset_min -= 1440;
+
+        uint8_t eff_sunrise_h = raw_sunrise_min / 60;
+        uint8_t eff_sunrise_m = raw_sunrise_min % 60;
+        uint8_t eff_sunset_h = raw_sunset_min / 60;
+        uint8_t eff_sunset_m = raw_sunset_min % 60;
+
+        snprintf(out->sunrise_str, sizeof(out->sunrise_str), "%02d:%02d", eff_sunrise_h, eff_sunrise_m);
+        snprintf(out->sunset_str, sizeof(out->sunset_str), "%02d:%02d", eff_sunset_h, eff_sunset_m);
     }
 
     out->is_night_time = time_astro_is_night_now();
