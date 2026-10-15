@@ -74,7 +74,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
@@ -121,7 +121,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
@@ -210,7 +210,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
@@ -267,7 +267,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "<button type='button' class='btn btn-sm' style='margin:2px;background:#10b981;color:#000' onclick='setPreset(0,255,120)'>Изумруд</button>"
         "</div>"
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
@@ -373,7 +373,7 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "<button type='button' class='btn btn-warning' style='width:100%' onclick=\"fetch('/api/trigger?dir=reset_sensors').then(()=>{alert('Состояние датчиков сброшено!')})\">🔄 Сбросить состояние датчиков прямо сейчас</button>"
         "</div>"
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
@@ -448,13 +448,13 @@ esp_err_t settings_get_handler(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk(req,
         "<div style='margin-top:14px;padding-top:10px;border-top:1px dashed #334155;text-align:right'>"
-        "<button type='submit' class='btn btn-success btn-sm'>💾 Сохранить этот раздел</button>"
+        "<button type='button' class='btn btn-success btn-sm' onclick='confirmAndSave(this)'>💾 Сохранить этот раздел</button>"
         "</div></div></details>"
     );
 
     /* ГЛАВНАЯ КНОПКА СОХРАНЕНИЯ ВНИЗУ И СКРИПТЫ */
     httpd_resp_sendstr_chunk(req,
-        "<button type='submit' class='btn btn-success' style='width:100%;padding:14px;font-size:16px;margin:16px 0'>💾 Сохранить ВСЕ настройки</button>"
+        "<button type='button' class='btn btn-success' style='width:100%;padding:14px;font-size:16px;margin:16px 0' onclick='confirmAndSave(this)'>💾 Сохранить ВСЕ настройки</button>"
         "</form>"
         "<script>"
         "function toggleAll(open){"
@@ -504,7 +504,17 @@ esp_err_t settings_get_handler(httpd_req_t *req)
         "    document.getElementById('st_sr04_fields').style.display = (stT === '1') ? 'grid' : 'none';"
         "    document.getElementById('st_pir_fields').style.display = (stT === '0') ? 'grid' : 'none';"
         "}"
-        "function pollLiveDistances(){"
+        "function confirmAndSave(btn){
+    if (confirm("Вы уверены, что хотите сохранить настройки в энергонезависимую память Flash (NVS)?")) {
+        var form = document.querySelector('form');
+        if (form) {
+            btn.disabled = true;
+            btn.innerText = "⏳ Сохранение в Flash...";
+            form.submit();
+        }
+    }
+}
+function pollLiveDistances(){"
         "    var xhr = new XMLHttpRequest();"
         "    xhr.open('GET', '/api/state', true);"
         "    xhr.onload = function(){"
