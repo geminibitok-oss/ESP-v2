@@ -171,7 +171,8 @@ void staircase_led_set_pixel_scaled(
     uint16_t phys_idx = get_physical_pixel_index(step, pixel_in_step);
 
     if (xSemaphoreTake(led_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        staircase_led_set_pixel(phys_idx, r, g, b);
+        led_strip_set_pixel(strip, phys_idx, r, g, b);
+        led_strip_refresh(strip);
         step_state[step] = true;
         xSemaphoreGive(led_mutex);
     }
