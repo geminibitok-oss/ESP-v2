@@ -8,6 +8,8 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "staircase_led.h"
+#include <math.h>
+#include <stdlib.h>
 
 static const char *TAG = "STAIRCASE";
 

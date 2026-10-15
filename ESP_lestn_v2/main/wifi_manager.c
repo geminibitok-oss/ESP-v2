@@ -146,20 +146,27 @@ static esp_err_t start_ap_internal(void)
 
 static void start_mdns_service(void)
 {
+    /* Если mDNS уже был инициализирован ранее, освобождаем */
+    mdns_free();
+
     const char *hname = (cfg && cfg->hostname[0] != '\0') ? cfg->hostname : "esp-lestn";
     esp_err_t err = mdns_init();
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "mDNS init failed: %d", err);
+        ESP_LOGW(TAG, "mDNS init failed: %s", esp_err_to_name(err));
         return;
     }
+
     mdns_hostname_set(hname);
     mdns_instance_name_set("ESP32 Smart Staircase Controller");
 
-    // Add HTTP service advertisement
-    mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
-    mdns_service_instance_name_set("_http", "_tcp", "ESP32 Staircase Web Interface");
+    /* Добавляем HTTP сервис в локальную сеть для обнаружения устройства */
+    mdns_txt_item_t serviceTxtData[2] = {
+        {"board", "ESP32"},
+        {"app", "lestn"}
+    };
+    mdns_service_add("esp-lestn", "_http", "_tcp", 80, serviceTxtData, 2);
 
-    ESP_LOGI(TAG, "mDNS responder started: http://%s.local (also http://lestn.local)", hname);
+    ESP_LOGI(TAG, "mDNS responder active: http://%s.local and http://%s", hname, ip_address);
 }
 
 static esp_err_t start_sta_internal(void)
