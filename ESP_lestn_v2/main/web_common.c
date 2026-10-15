@@ -139,7 +139,29 @@ esp_err_t web_send_html_header(httpd_req_t *req, const char *title)
         "details[open] summary::after{transform:rotate(180deg);color:#38bdf8}"
         ".sec-body{margin-top:14px;padding-top:12px;border-top:1px solid #334155}" 
         "</style></head><body><div class='wrap'>"
-        "<h1>✨ Умная лестница ESP-Lestn v2</h1>"
+    );
+
+    /* Надежное получение реальной версии прошивки */
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    const char *ver = (app_desc && app_desc->version[0] != '\0') ? app_desc->version : "5.0.0";
+    char ver_tag[32];
+    if (ver[0] == 'v' || ver[0] == 'V') {
+        snprintf(ver_tag, sizeof(ver_tag), "%s", ver);
+    } else {
+        snprintf(ver_tag, sizeof(ver_tag), "v%s", ver);
+    }
+
+    char h_buf[512];
+    snprintf(h_buf, sizeof(h_buf),
+        "<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px'>"
+        "<h1 style='margin:0;font-size:20px'>✨ Умная лестница ESP-Lestn</h1>"
+        "<span style='background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:bold;font-family:monospace'>%s</span>"
+        "</div>",
+        ver_tag
+    );
+    httpd_resp_sendstr_chunk(req, h_buf);
+
+    httpd_resp_sendstr_chunk(req,
         "<div class='nav'>"
         "<a href='/'>Главная</a>"
         "<a href='/settings'>Настройки</a>"
