@@ -355,25 +355,66 @@ static void staircase_fsm_task(void *pvParameters)
             }
         }
 
-        /* TURNING ON BOTH (Защита при срабатывании 2 датчиков: встречная волна выбранным цветом и эффектом) */
+        /* TURNING ON BOTH (Встречное включение при срабатывании 2 датчиков: ТОЧНО ВЫБРАННЫЙ ЭФФЕКТ навстречу друг другу) */
         else if (current_state == STAIR_STATE_TURNING_ON_BOTH)
         {
             uint16_t total_steps = cfg->steps;
             uint16_t half = (total_steps + 1) / 2;
-            uint16_t delay_ms = cfg->step_on_time_ms;
-            if (delay_ms < 30) delay_ms = 30;
+            uint16_t delay_ms = cfg->step_on_time_ms < 30 ? 30 : cfg->step_on_time_ms;
+            uint8_t effect = cfg->anim_effect;
 
-            ESP_LOGI(TAG, "Сработали 2 датчика! Встречная волна выбранным цветом (R=%u G=%u B=%u), без белой вспышки",
-                     cfg->color_r, cfg->color_g, cfg->color_b);
+            ESP_LOGI(TAG, "Сработали 2 датчика! Запуск встречной анимации с эффектом #%u навстречу друг другу", effect);
 
-            /* Встречное плавное включение с обоих концов выбранным пользователем цветом */
+            /* Встречное включение с соблюдением ВЫБРАННОГО ЭФФЕКТА */
             for (uint16_t i = 0; i < half; i++)
             {
                 uint16_t s_bottom = i;
                 uint16_t s_top = (total_steps - 1) - i;
 
-                staircase_led_set_step_scaled(s_bottom, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
-                staircase_led_set_step_scaled(s_top, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                if (effect == ANIM_EFFECT_RAINBOW)
+                {
+                    /* Радужная волна навстречу с двух концов */
+                    uint16_t hue_b = (s_bottom * 360 / (total_steps > 0 ? total_steps : 1)) % 360;
+                    uint16_t hue_t = (s_top * 360 / (total_steps > 0 ? total_steps : 1)) % 360;
+                    uint8_t rb, gb, bb, rt, gt, bt;
+                    staircase_led_hsv2rgb(hue_b, 240, 255, &rb, &gb, &bb);
+                    staircase_led_hsv2rgb(hue_t, 240, 255, &rt, &gt, &bt);
+                    staircase_led_set_step_scaled(s_bottom, rb, gb, bb, cfg->brightness);
+                    staircase_led_set_step_scaled(s_top, rt, gt, bt, cfg->brightness);
+                }
+                else if (effect == ANIM_EFFECT_COLOR_CYCLE)
+                {
+                    /* Цветовой спектр навстречу */
+                    uint16_t hue_b = (i * 35) % 360;
+                    uint16_t hue_t = ((half - i) * 35) % 360;
+                    uint8_t rb, gb, bb, rt, gt, bt;
+                    staircase_led_hsv2rgb(hue_b, 220, 255, &rb, &gb, &bb);
+                    staircase_led_hsv2rgb(hue_t, 220, 255, &rt, &gt, &bt);
+                    staircase_led_set_step_scaled(s_bottom, rb, gb, bb, cfg->brightness);
+                    staircase_led_set_step_scaled(s_top, rt, gt, bt, cfg->brightness);
+                }
+                else if (effect == ANIM_EFFECT_FIRE)
+                {
+                    /* Огненная волна навстречу */
+                    staircase_led_set_step_scaled(s_bottom, 255, 90, 0, cfg->brightness);
+                    staircase_led_set_step_scaled(s_top, 255, 90, 0, cfg->brightness);
+                }
+                else if (effect == ANIM_EFFECT_FADE)
+                {
+                    /* Плавное нарастание навстречу */
+                    uint8_t br_levels[3] = { (uint8_t)(cfg->brightness * 0.33f), (uint8_t)(cfg->brightness * 0.66f), cfg->brightness };
+                    for (int l = 0; l < 3; l++) {
+                        staircase_led_set_step_scaled(s_bottom, cfg->color_r, cfg->color_g, cfg->color_b, br_levels[l]);
+                        staircase_led_set_step_scaled(s_top, cfg->color_r, cfg->color_g, cfg->color_b, br_levels[l]);
+                        vTaskDelay(pdMS_TO_TICKS(delay_ms / 3));
+                    }
+                }
+                else
+                {
+                    /* Классическая волна, штора, метеор выбранным цветом */
+                    staircase_led_set_step_scaled(s_bottom, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                    staircase_led_set_step_scaled(s_top, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                }
 
                 if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
                     if (cmd.type == CMD_MANUAL_OFF) {
@@ -386,8 +427,18 @@ static void staircase_fsm_task(void *pvParameters)
 
             if (current_state == STAIR_STATE_TURNING_ON_BOTH)
             {
-                /* Фиксация выбранного цвета на ступенях */
-                staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                /* Завершение анимации: фиксация эффекта в удержании */
+                if (effect == ANIM_EFFECT_RAINBOW) {
+                    /* Для радуги сохраняем радужный спектр на ступенях */
+                    for (uint16_t s = 0; s < total_steps; s++) {
+                        uint16_t hue = (s * 360 / (total_steps > 0 ? total_steps : 1)) % 360;
+                        uint8_t r, g, b;
+                        staircase_led_hsv2rgb(hue, 240, 255, &r, &g, &b);
+                        staircase_led_set_step_scaled(s, r, g, b, cfg->brightness);
+                    }
+                } else {
+                    staircase_led_all_on(cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                }
                 current_state = STAIR_STATE_HOLDING;
                 hold_start_time_us = esp_timer_get_time();
                 hold_duration_ms = cfg->hold_time_ms + 2000;
