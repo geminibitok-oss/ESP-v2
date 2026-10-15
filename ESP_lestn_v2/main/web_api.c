@@ -19,9 +19,26 @@ esp_err_t api_state_handler(httpd_req_t *req)
 
     char json[2048];
     int offset = snprintf(json, sizeof(json),
-        "{\"state\":\"%s\",\"hold_ms\":%u,\"bottom_sensor\":%s,\"top_sensor\":%s,\"heap\":%lu,"
-        "\"time_synced\":%s,\"current_time\":\"%s\",\"sunrise\":\"%s\",\"sunset\":\"%s\",\"is_night\":%s,"
-        "\"schedule_mode\":%u,\"next_switch\":\"%s\",\"steps\":[",
+        "{\"state\":\"%s\","
+        "\"is_party\":%s,"
+        "\"hold_ms\":%u,"
+        "\"bottom_sensor\":%s,"
+        "\"top_sensor\":%s,"
+        "\"sensor_bottom_type\":%u,"
+        "\"sensor_top_type\":%u,"
+        "\"bottom_dist\":%u,"
+        "\"top_dist\":%u,"
+        "\"bottom_threshold\":%u,"
+        "\"top_threshold\":%u,"
+        "\"heap\":%lu,"
+        "\"time_synced\":%s,"
+        "\"current_time\":\"%s\","
+        "\"sunrise\":\"%s\","
+        "\"sunset\":\"%s\","
+        "\"is_night\":%s,"
+        "\"schedule_mode\":%u,"
+        "\"next_switch\":\"%s\","
+        "\"steps\":[",
         staircase_get_state_str_ru(),
         staircase_is_party_mode() ? "true" : "false",
         (unsigned int)staircase_get_hold_remaining_ms(),
@@ -49,6 +66,7 @@ esp_err_t api_state_handler(httpd_req_t *req)
     }
 
     snprintf(json + offset, sizeof(json) - offset, "]}");
+
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -84,7 +102,6 @@ esp_err_t api_trigger_handler(httpd_req_t *req)
             }
         }
     }
-
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 }
