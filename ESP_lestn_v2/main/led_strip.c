@@ -149,6 +149,34 @@ void staircase_led_show(void)
     led_strip_refresh(strip);
 }
 
+void staircase_led_set_pixel_scaled(
+    uint16_t step,
+    uint16_t pixel_in_step,
+    uint8_t red,
+    uint8_t green,
+    uint8_t blue,
+    uint8_t brightness_pct)
+{
+    if (strip == NULL || led_mutex == NULL || step >= step_count || pixel_in_step >= pixels_per_step)
+        return;
+
+    /* Respect first/last step enablement */
+    if (step == 0 && !enable_first_step) return;
+    if (step_count > 0 && step == (step_count - 1) && !enable_last_step) return;
+
+    uint8_t r = scale_color(red, brightness_pct);
+    uint8_t g = scale_color(green, brightness_pct);
+    uint8_t b = scale_color(blue, brightness_pct);
+
+    uint16_t phys_idx = get_physical_pixel_index(step, pixel_in_step);
+
+    if (xSemaphoreTake(led_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        staircase_led_set_pixel(phys_idx, r, g, b);
+        step_state[step] = true;
+        xSemaphoreGive(led_mutex);
+    }
+}
+
 void staircase_led_set_step_scaled(
     uint16_t step,
     uint8_t red,

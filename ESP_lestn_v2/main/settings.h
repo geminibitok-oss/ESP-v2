@@ -84,6 +84,7 @@ typedef struct
     uint8_t anim_effect;       /* 0..5 (anim_effect_t) */
     uint8_t hold_effect;       /* 0..4 (hold_effect_t) */
     uint8_t off_effect;        /* 0..2 (off_effect_t) */
+    uint8_t step_fill_mode;    /* 0: Ступенька целиком сразу, 1: По одному диоду (бегущая линия) */
 
     /* Staircase timing */
     uint16_t step_on_time_ms;   /* Delay between turning on each step */

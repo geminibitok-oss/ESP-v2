@@ -12,6 +12,7 @@ esp_err_t staircase_led_init(
 
 void staircase_led_clear(void);
 
+void staircase_led_set_pixel_scaled(uint16_t step, uint16_t pixel_in_step, uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness_pct);
 void staircase_led_set_pixel(
     uint16_t index,
     uint8_t red,

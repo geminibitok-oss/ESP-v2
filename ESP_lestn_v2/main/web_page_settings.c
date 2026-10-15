@@ -55,6 +55,17 @@ esp_err_t settings_get_handler(httpd_req_t *req)
     snprintf(buf, sizeof(buf), "<input type='number' name='pixels' value='%u' min='1' max='50'></div></div>", (unsigned int)cfg->pixels_per_step);
     httpd_resp_sendstr_chunk(req, buf);
 
+    httpd_resp_sendstr_chunk(req,
+        "<div class='form-group'><label>Способ зажигания каждой ступени</label><select name='fill_mode'>"
+    );
+    snprintf(buf, sizeof(buf),
+        "<option value='0' %s>⚡ Вся ступенька сразу (Классика)</option>"
+        "<option value='1' %s>✨ По одному диоду (Плавная бегущая линия, время шага делится)</option></select></div>",
+        cfg->step_fill_mode == 0 ? "selected" : "",
+        cfg->step_fill_mode == 1 ? "selected" : ""
+    );
+    httpd_resp_sendstr_chunk(req, buf);
+
     httpd_resp_sendstr_chunk(req, "<div class='form-group'><label>Топология ленты на ступенях</label><select name='zigzag'>");
     snprintf(buf, sizeof(buf),
         "<option value='0' %s>Прямое подключение (каждая ступень слева направо)</option>"
@@ -563,6 +574,7 @@ esp_err_t settings_post_handler(httpd_req_t *req)
 
     cfg->steps = (uint16_t)web_get_post_param_int(post_buf, "steps", cfg->steps);
     cfg->pixels_per_step = (uint16_t)web_get_post_param_int(post_buf, "pixels", cfg->pixels_per_step);
+    cfg->step_fill_mode = (uint8_t)web_get_post_param_int(post_buf, "fill_mode", 0);
     cfg->strip_zigzag = (web_get_post_param_int(post_buf, "zigzag", 0) == 1);
     cfg->brightness = (uint8_t)web_get_post_param_int(post_buf, "brightness", cfg->brightness);
     cfg->night_brightness = (uint8_t)web_get_post_param_int(post_buf, "night_brightness", cfg->night_brightness);

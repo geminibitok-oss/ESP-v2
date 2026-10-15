@@ -804,16 +804,42 @@ static void staircase_fsm_task(void *pvParameters)
             }
             else
             {
-                /* Classic Step-by-Step wave downwards */
-                for (int s = total_steps - 1; s >= 0; s--)
+                /* Режим заполнения: целиком ступенька или по одному диоду */
+                if (cfg->step_fill_mode == 1 && cfg->pixels_per_step > 1)
                 {
-                    staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                    /* Включение ПО ОДНОМУ ДИОДУ сверху вниз: время шага делится на число диодов */
+                    uint16_t pps = cfg->pixels_per_step;
+                    uint16_t px_delay_ms = delay_ms / pps;
+                    if (px_delay_ms < 5) px_delay_ms = 5;
 
-                    if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
-                        if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
-                            staircase_led_clear();
-                            current_state = STAIR_STATE_IDLE;
-                            break;
+                    for (int s = total_steps - 1; s >= 0; s--)
+                    {
+                        for (uint16_t p = 0; p < pps; p++)
+                        {
+                            staircase_led_set_pixel_scaled((uint16_t)s, p, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+                            staircase_led_show();
+
+                            if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(px_delay_ms)) == pdTRUE) {
+                                if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; }
+                                else if (cmd.type == CMD_MANUAL_OFF) { staircase_led_clear(); current_state = STAIR_STATE_IDLE; break; }
+                            }
+                        }
+                        if (current_state != STAIR_STATE_TURNING_ON_DOWN) break;
+                    }
+                }
+                else
+                {
+                    /* Включение ступеньки целиком сразу сверху вниз */
+                    for (int s = total_steps - 1; s >= 0; s--)
+                    {
+                        staircase_led_set_step_scaled((uint16_t)s, cfg->color_r, cfg->color_g, cfg->color_b, cfg->brightness);
+
+                        if (xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(delay_ms)) == pdTRUE) {
+                            if (cmd.type == CMD_TRIGGER_BOTTOM || cmd.type == CMD_TRIGGER_TOP) { current_state = STAIR_STATE_TURNING_ON_BOTH; break; } else if (cmd.type == CMD_MANUAL_OFF) {
+                                staircase_led_clear();
+                                current_state = STAIR_STATE_IDLE;
+                                break;
+                            }
                         }
                     }
                 }
